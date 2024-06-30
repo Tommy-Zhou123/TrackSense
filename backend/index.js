@@ -1,5 +1,5 @@
 import express from "express"
-import mongoose from "mongoose"
+import mongoose, { mongo } from "mongoose"
 import { PORT, mongoDbUrl } from "./config.js"
 import expenseRoute from "./routes/expenseRoute.js"
 import cors from "cors"
