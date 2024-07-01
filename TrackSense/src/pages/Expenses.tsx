@@ -16,29 +16,23 @@ import { useNavigate } from 'react-router-dom';
 
 interface Expense {
     _id: string
-    date: string
-    vendor: string
-    amount: number
-    category: string
-    notes: string
-}
-
-function ExpensesRow(expense: Expense) {
-    return (
-        <tr key={expense._id}>
-            <td>{expense.date.substring(0, 10)}</td>
-            <td>{expense.vendor}</td>
-            <td>{expense.amount}</td>
-            <td>{expense.category}</td>
-            <td>{expense.notes ? expense.notes : ""}</td>
-        </tr>
-    )
+    date: string, //TODO: CHANGE to DATE type
+    account: string,
+    vendor: string,
+    category: string,
+    amount: number,
+    notes: string,
 }
 
 const Expenses = () => {
-    const [expenses, setExpenses] = useState([])
+    const [expenses, setExpenses] = useState([Expense])
+    const [selectedExps, setSelectedExps] = useState([String])
     const [show, setShow] = useState(false);
+    const [showCat, setShowCat] = useState(false);
+    const [showAcc, setShowAcc] = useState(false);
+
     const [date, setDate] = useState('');
+    const [account, setAccount] = useState('');
     const [vendor, setVendor] = useState('');
     const [amount, setAmount] = useState('');
     const [category, setCategory] = useState('');
@@ -58,14 +52,61 @@ const Expenses = () => {
     const navigate = useNavigate();
     function AddExpense() {
         const data = {
-            date, vendor, amount, category, notes
+            date, account, vendor, amount, category, notes
         }
+
+        console.log(data)
         axios.post('http://localhost:3000/expenses/add', data)
             .then(() => {
-                window.location.reload();
+                axios.get('http://localhost:3000/expenses')
+                    .then((response) => {
+                        setExpenses(response.data.expenses)
+                    })
+                    .catch((err) => console.log(err))
                 handleClose()
             })
             .catch((err) => console.log(err))
+    }
+
+    function DeleteExpenses() {
+        axios.delete(`http://localhost:3000/expenses/${123}`)
+            .then(() => {
+                axios.get('http://localhost:3000/expenses')
+                    .then((response) => {
+                        setExpenses(response.data.expenses)
+                    })
+                    .catch((err) => console.log(err))
+            })
+            .catch((err) => console.log(err))
+    }
+
+    function handleCategory(e: React.ChangeEvent<HTMLSelectElement>) {
+        // Check if last option is selected, need to creat new category
+        if (e.target.selectedIndex == e.target.childElementCount - 1) {
+            setShowCat(true)
+        } else {
+            setShowCat(false)
+            if (e.target.value != null && e.target.value != "") {
+                setCategory(e.target.value)
+            }
+        }
+    }
+
+    function handleAccount(e: React.ChangeEvent<HTMLSelectElement>) {
+        // Check if last option is selected, need to creat new account
+        if (e.target.selectedIndex == e.target.childElementCount - 1) {
+            setShowAcc(true)
+        } else {
+            setShowAcc(false)
+            if (e.target.value != null && e.target.value != "") {
+                setAccount(e.target.value)
+            }
+        }
+    }
+
+    function updateSelected() {
+        let sel = selectedExps;
+        sel.push()
     }
 
     return (
@@ -77,8 +118,9 @@ const Expenses = () => {
                         <div>Expenses</div>
                     </Col>
                     <Col className='ms-auto text-end'>
-                        <Button className="me-2" onClick={handleShow} variant="outline-dark" size="sm">Add</Button>
-                        <Button variant="outline-dark" size="sm">Import</Button>
+                        <Button className="me-2" onClick={handleShow} variant="outline-dark">Add</Button>
+                        <Button variant="outline-dark me-2">Import</Button>
+                        <Button variant="outline-dark" onClick={DeleteExpenses}>Delete</Button>
                     </Col>
                 </Row>
                 <Row className='align-items-center mt-3 mb-4'>
@@ -113,22 +155,32 @@ const Expenses = () => {
                     </Col>
                 </Row>
                 <Row>
-                    <Table bordered hover>
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Vendor</th>
-                                <th>Amount</th>
-                                <th>Category</th>
-                                <th>Notes</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {expenses?.map((expense: Expense) => {
-                                return <ExpensesRow key={expense._id} {...expense} />
-                            })}
-                        </tbody>
-                    </Table>
+                    <Form>
+                        <Table bordered hover>
+                            <thead>
+                                <tr>
+                                    <th></th>
+                                    <th>Date</th>
+                                    <th>Vendor</th>
+                                    <th>Amount</th>
+                                    <th>Category</th>
+                                    <th>Notes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {expenses?.map((expense: Expense) => {
+                                    return (<tr key={expense._id}>
+                                        <td><Form.Check onClick={() => { setSelectedExps(selectedExps.push(expense._id)) }} /></td>
+                                        <td>{expense.date.substring(0, 10)}</td>
+                                        <td>{expense.vendor}</td>
+                                        <td>{expense.amount}</td>
+                                        <td>{expense.category}</td>
+                                        <td>{expense.notes ? expense.notes : ""}</td>
+                                    </tr>)
+                                })}
+                            </tbody>
+                        </Table>
+                    </Form>
                 </Row>
             </Container >
 
@@ -148,6 +200,23 @@ const Expenses = () => {
                                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDate(e.target.value)}
                             />
                         </InputGroup>
+                        <Form.Select onChange={handleAccount}
+                            aria-label="Default select example" className="mb-3">
+                            <option value="">Select or Add an Account</option>
+                            {/* {expenses?.map((expense: Expense) => {
+                                // TODO: NEED TO ADD ACCOUNTS
+                                return <option key={expense._id} value={expense.category}>{expense.category}</option>
+                            })} */}
+                            <option value="">New Account</option>
+                        </Form.Select>
+                        <InputGroup className={showAcc ? "mb-3" : "mb-3 d-none"}>
+                            <InputGroup.Text id="amount">Account</InputGroup.Text>
+                            <Form.Control
+                                aria-label="newAccount"
+                                aria-describedby="newAccount"
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAccount(e.target.value)}
+                            />
+                        </InputGroup>
                         <InputGroup className="mb-3">
                             <InputGroup.Text id="vendor">Vendor</InputGroup.Text>
                             <Form.Control
@@ -164,15 +233,23 @@ const Expenses = () => {
                                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
                             />
                         </InputGroup>
-                        <Form.Select onChange={(e: React.ChangeEvent<HTMLSelectElement>) => e.target.value != null ? setCategory(e.target.value) : ""}
+                        <Form.Select onChange={handleCategory}
                             aria-label="Default select example" className="mb-3">
-                            <option>Select or Add a Category</option>
+                            <option value="">Select or Add a Category</option>
                             {expenses?.map((expense: Expense) => {
                                 // TODO: NEED TO GET ALL CATEGORIES TO POPULATE SELECTION
                                 return <option key={expense._id} value={expense.category}>{expense.category}</option>
                             })}
-                            <option>New Category</option>
+                            <option value="">New Category</option>
                         </Form.Select>
+                        <InputGroup className={showCat ? "mb-3" : "mb-3 d-none"}>
+                            <InputGroup.Text id="amount">Category</InputGroup.Text>
+                            <Form.Control
+                                aria-label="newCategory"
+                                aria-describedby="newCategory"
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCategory(e.target.value)}
+                            />
+                        </InputGroup>
                         <InputGroup className="mb-3">
                             <InputGroup.Text>Notes</InputGroup.Text>
                             <Form.Control as="textarea" aria-label="textarea"

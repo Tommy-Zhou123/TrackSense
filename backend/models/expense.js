@@ -3,9 +3,10 @@ const Schema = mongoose.Schema
 
 const expenseSchema = new Schema({
 	date: Date,
-	amount: Number,
+	account: String,
 	vendor: String,
 	category: String,
+	amount: Number,
 	notes: String,
 })
 
