@@ -17,7 +17,7 @@ router.post("/add", async (req, res) => {
 				amount: req.body.amount,
 				vendor: req.body.vendor,
 				category: req.body.category,
-				comments: req.body.comments,
+				notes: req.body.notes,
 			}
 			const expense = await Expense.create(newExpense)
 

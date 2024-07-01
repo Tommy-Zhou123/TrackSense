@@ -1,3 +1,23 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+.bg-slate {
+    background-color: #F3F3F3;
+}
+
+.ps-5 {
+    padding-left: 2.5rem !important;
+}
+
+.ps-6 {
+    padding-left: 4rem !important;
+}
+
+.fs-xl {
+    font-size: 3.5rem !important;
+}
+
+.disabled {
+    color: #f2fcffbf !important;
+}
+
+.fs-6 {
+    font-size: 1.1rem !important;
+}

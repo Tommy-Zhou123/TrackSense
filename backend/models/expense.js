@@ -6,7 +6,7 @@ const expenseSchema = new Schema({
 	amount: Number,
 	vendor: String,
 	category: String,
-	comments: String,
+	notes: String,
 })
 
 export const Expense = mongoose.model("Expense", expenseSchema)
