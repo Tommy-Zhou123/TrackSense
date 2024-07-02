@@ -25,8 +25,8 @@ interface Expense {
 }
 
 const Expenses = () => {
-    const [expenses, setExpenses] = useState([Expense])
-    const [selectedExps, setSelectedExps] = useState([String])
+    const [expenses, setExpenses] = useState<Expense[]>([])
+    const [selectedExps, setSelectedExps] = useState<string[]>([]);
     const [show, setShow] = useState(false);
     const [showCat, setShowCat] = useState(false);
     const [showAcc, setShowAcc] = useState(false);
@@ -42,42 +42,50 @@ const Expenses = () => {
     const handleShow = () => setShow(true);
 
     useEffect(() => {
+        getExpenses()
+    }, [])
+
+    function getExpenses() {
         axios.get('http://localhost:3000/expenses')
             .then((response) => {
                 setExpenses(response.data.expenses)
             })
             .catch((err) => console.log(err))
-    }, [])
+    }
 
-    const navigate = useNavigate();
     function AddExpense() {
         const data = {
             date, account, vendor, amount, category, notes
         }
-
-        console.log(data)
         axios.post('http://localhost:3000/expenses/add', data)
             .then(() => {
-                axios.get('http://localhost:3000/expenses')
-                    .then((response) => {
-                        setExpenses(response.data.expenses)
-                    })
-                    .catch((err) => console.log(err))
+                getExpenses()
                 handleClose()
             })
             .catch((err) => console.log(err))
     }
 
+    function EditExpenses() {
+        const data = {
+            date, account, vendor, amount, category, notes
+        }
+        selectedExps.forEach(expense => {
+            // axios.put(`http://localhost:3000/expenses/${???}`, data) TO DO!!
+            //     .then(() => {
+            //         getExpenses()
+            //     })
+            //     .catch((err) => console.log(err))
+        });
+    }
+
     function DeleteExpenses() {
-        axios.delete(`http://localhost:3000/expenses/${123}`)
-            .then(() => {
-                axios.get('http://localhost:3000/expenses')
-                    .then((response) => {
-                        setExpenses(response.data.expenses)
-                    })
-                    .catch((err) => console.log(err))
-            })
-            .catch((err) => console.log(err))
+        selectedExps.forEach(expense => {
+            axios.delete(`http://localhost:3000/expenses/${expense} `)
+                .then(() => {
+                    getExpenses()
+                })
+                .catch((err) => console.log(err))
+        });
     }
 
     function handleCategory(e: React.ChangeEvent<HTMLSelectElement>) {
@@ -104,11 +112,6 @@ const Expenses = () => {
         }
     }
 
-    function updateSelected() {
-        let sel = selectedExps;
-        sel.push()
-    }
-
     return (
         <>
             <Header />
@@ -120,6 +123,7 @@ const Expenses = () => {
                     <Col className='ms-auto text-end'>
                         <Button className="me-2" onClick={handleShow} variant="outline-dark">Add</Button>
                         <Button variant="outline-dark me-2">Import</Button>
+                        <Button variant="outline-dark" onClick={EditExpenses}>Edit</Button>
                         <Button variant="outline-dark" onClick={DeleteExpenses}>Delete</Button>
                     </Col>
                 </Row>
@@ -161,6 +165,7 @@ const Expenses = () => {
                                 <tr>
                                     <th></th>
                                     <th>Date</th>
+                                    <th>Account</th>
                                     <th>Vendor</th>
                                     <th>Amount</th>
                                     <th>Category</th>
@@ -170,8 +175,9 @@ const Expenses = () => {
                             <tbody>
                                 {expenses?.map((expense: Expense) => {
                                     return (<tr key={expense._id}>
-                                        <td><Form.Check onClick={() => { setSelectedExps(selectedExps.push(expense._id)) }} /></td>
+                                        <td><Form.Check onClick={() => { setSelectedExps([...selectedExps, expense._id]) }} /></td>
                                         <td>{expense.date.substring(0, 10)}</td>
+                                        <td>{expense.account}</td>
                                         <td>{expense.vendor}</td>
                                         <td>{expense.amount}</td>
                                         <td>{expense.category}</td>

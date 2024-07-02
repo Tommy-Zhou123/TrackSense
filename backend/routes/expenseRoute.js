@@ -10,12 +10,14 @@ router.post("/add", async (req, res) => {
 			req.body.date &&
 			req.body.amount &&
 			req.body.vendor &&
+			req.body.account &&
 			req.body.category
 		) {
 			const newExpense = {
 				date: req.body.date,
-				amount: req.body.amount,
+				account: req.body.account,
 				vendor: req.body.vendor,
+				amount: req.body.amount,
 				category: req.body.category,
 				notes: req.body.notes,
 			}
@@ -67,6 +69,7 @@ router.put("/:id", async (req, res) => {
 			!req.body.date ||
 			!req.body.amount ||
 			!req.body.vendor ||
+			!req.body.account ||
 			!req.body.category
 		) {
 			return res.status(400).send({ message: "All fields are required!" })
