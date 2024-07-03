@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Header } from './Home';
 import Dropdown from 'react-bootstrap/Dropdown';
 import Container from 'react-bootstrap/Container';
@@ -26,10 +26,13 @@ interface Expense {
 
 const Expenses = () => {
     const [expenses, setExpenses] = useState<Expense[]>([])
-    const [selectedExps, setSelectedExps] = useState<string[]>([]);
-    const [show, setShow] = useState(false);
+    const [checkedExps, setCheckedExps] = useState<string[]>([]);
+
+    const [showForm, setShowForm] = useState(false);
     const [showCat, setShowCat] = useState(false);
     const [showAcc, setShowAcc] = useState(false);
+
+    const [editMode, setEditMode] = useState(false);
 
     const [date, setDate] = useState('');
     const [account, setAccount] = useState('');
@@ -38,12 +41,14 @@ const Expenses = () => {
     const [category, setCategory] = useState('');
     const [notes, setNotes] = useState('');
 
-    const handleClose = () => setShow(false);
-    const handleShow = () => setShow(true);
+    const [editedExpenses, setEditedxpenses] = useState<Expense[]>([])
+
+    const handleClose = () => setShowForm(false);
+    const handleShow = () => setShowForm(true);
 
     useEffect(() => {
         getExpenses()
-    }, [])
+    }, [expenses]) //TODO: CHECK IF THIS IS CORRECT
 
     function getExpenses() {
         axios.get('http://localhost:3000/expenses')
@@ -69,7 +74,7 @@ const Expenses = () => {
         const data = {
             date, account, vendor, amount, category, notes
         }
-        selectedExps.forEach(expense => {
+        checkedExps.forEach(expense => {
             // axios.put(`http://localhost:3000/expenses/${???}`, data) TO DO!!
             //     .then(() => {
             //         getExpenses()
@@ -79,7 +84,7 @@ const Expenses = () => {
     }
 
     function DeleteExpenses() {
-        selectedExps.forEach(expense => {
+        checkedExps.forEach(expense => {
             axios.delete(`http://localhost:3000/expenses/${expense} `)
                 .then(() => {
                     getExpenses()
@@ -112,6 +117,25 @@ const Expenses = () => {
         }
     }
 
+    function handleCheck(e: React.ChangeEvent<HTMLInputElement>) {
+        const { id, checked } = e.target;
+        if (checked) {
+            setCheckedExps([...checkedExps, id])
+        } else {
+            setCheckedExps(checkedExps.filter((ID) => ID != id))
+        }
+    }
+
+    function handleCheckAll(e: React.ChangeEvent<HTMLInputElement>) {
+        const { checked } = e.target;
+        if (checked) {
+            setCheckedExps(expenses.map((expense) => expense._id))
+            setCheckedExps(["123"]) // TODO: REMOVE, ONLY FOR TESTING PURPOSES
+        } else {
+            setCheckedExps([])
+        }
+    }
+
     return (
         <>
             <Header />
@@ -123,7 +147,9 @@ const Expenses = () => {
                     <Col className='ms-auto text-end'>
                         <Button className="me-2" onClick={handleShow} variant="outline-dark">Add</Button>
                         <Button variant="outline-dark me-2">Import</Button>
-                        <Button variant="outline-dark" onClick={EditExpenses}>Edit</Button>
+                        <Button className={editMode ? "d-none" : ""} variant="outline-dark me-2" onClick={() => { setEditMode(true) }}>Edit</Button>
+                        <Button className={editMode ? "" : "d-none"} variant="outline-dark me-2" onClick={EditExpenses}>Save</Button>
+                        <Button className={editMode ? "" : "d-none"} variant="outline-dark me-2" onClick={() => { setEditMode(false) }}>Cancel</Button>
                         <Button variant="outline-dark" onClick={DeleteExpenses}>Delete</Button>
                     </Col>
                 </Row>
@@ -163,7 +189,7 @@ const Expenses = () => {
                         <Table bordered hover>
                             <thead>
                                 <tr>
-                                    <th></th>
+                                    <th className='text-center'><Form.Check onChange={handleCheckAll} /></th>
                                     <th>Date</th>
                                     <th>Account</th>
                                     <th>Vendor</th>
@@ -173,16 +199,37 @@ const Expenses = () => {
                                 </tr>
                             </thead>
                             <tbody>
+                                <tr>
+                                    <td><Form.Check checked={checkedExps.includes("123")} id='123' className='text-center' onChange={handleCheck} /></td>
+                                    <td>2021-10-10</td>
+                                    <td>Bank of America</td>
+                                    <td>Amazon</td>
+                                    <td>100.00</td>
+                                    <td>Shopping</td>
+                                    <td>Amazon Purchase</td>
+                                </tr>
                                 {expenses?.map((expense: Expense) => {
-                                    return (<tr key={expense._id}>
-                                        <td><Form.Check onClick={() => { setSelectedExps([...selectedExps, expense._id]) }} /></td>
-                                        <td>{expense.date.substring(0, 10)}</td>
-                                        <td>{expense.account}</td>
-                                        <td>{expense.vendor}</td>
-                                        <td>{expense.amount}</td>
-                                        <td>{expense.category}</td>
-                                        <td>{expense.notes ? expense.notes : ""}</td>
-                                    </tr>)
+                                    if (editMode) {
+                                        return (<tr key={expense._id}>
+                                            <td><Form.Check checked={checkedExps.includes(expense._id)} id={expense._id} className='text-center' onChange={handleCheck} /></td>
+                                            <td><Form.Check>{expense.date.substring(0, 10)}</td>
+                                            <td>{expense.account}</td>
+                                            <td>{expense.vendor}</td>
+                                            <td>{expense.amount}</td>
+                                            <td>{expense.category}</td>
+                                            <td>{expense.notes ? expense.notes : ""}</td>
+                                        </tr>)
+                                    } else {
+                                        return (<tr key={expense._id}>
+                                            <td><Form.Check checked={checkedExps.includes(expense._id)} id={expense._id} className='text-center' onChange={handleCheck} /></td>
+                                            <td>{expense.date.substring(0, 10)}</td>
+                                            <td>{expense.account}</td>
+                                            <td>{expense.vendor}</td>
+                                            <td>{expense.amount}</td>
+                                            <td>{expense.category}</td>
+                                            <td>{expense.notes ? expense.notes : ""}</td>
+                                        </tr>)
+                                    }
                                 })}
                             </tbody>
                         </Table>
@@ -191,7 +238,7 @@ const Expenses = () => {
             </Container >
 
             {/* Add Expense Form */}
-            <Modal show={show} onHide={handleClose} centered>
+            <Modal show={showForm} onHide={handleClose} centered>
                 <Modal.Header closeButton>
                     <Modal.Title>Add An Expense</Modal.Title>
                 </Modal.Header>

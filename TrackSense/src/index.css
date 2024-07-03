@@ -21,3 +21,11 @@
 .fs-6 {
     font-size: 1.1rem !important;
 }
+
+.form-check-input {
+    border: 1px solid #798285bf !important;
+}
+
+.form-check-input:checked {
+    background-color: #232830 !important;
+}
