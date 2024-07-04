@@ -35,10 +35,10 @@ const Expenses = () => {
     const [expenses, setExpenses] = useState<Expense[]>([]);
     const [checkedExps, setCheckedExps] = useState<string[]>([]);
 
-    const [accSelect, setAccSelect] = useState('0');
+    const [accSelect, setAccSelect] = useState('');
     const [newAccount, setNewAccount] = useState('');
 
-    const [catSelect, setCatSelect] = useState('0');
+    const [catSelect, setCatSelect] = useState('');
     const [newCategory, setNewCategory] = useState('');
 
     const [showForm, setShowForm] = useState(false);
@@ -72,8 +72,8 @@ const Expenses = () => {
         setNotes('');
         setNewAccount('');
         setNewCategory('');
-        setAccSelect('0');
-        setCatSelect('0');
+        setAccSelect('');
+        setCatSelect('');
     }
 
     function getExpenses() {
@@ -81,21 +81,33 @@ const Expenses = () => {
             .then((response) => {
                 setExpenses(response.data.expenses)
             })
-            .catch((err) => console.log(err))
+            .catch((err) => {
+                console.log(err);
+                alert("Error retrieving expense data, please refresh.")
+            })
     }
 
-    function AddExpense() {
+    function AddExpense(e: React.FormEvent<HTMLFormElement>) {
+        e.preventDefault()
         const data = {
             date, account, vendor, amount, category, notes
         }
-        axios.post('http://localhost:3000/expenses/add', data)
-            .then(() => {
-                handleClose()
-                setShowAcc(false);
-                setShowCat(false);
-                clearFormValues()
-            })
-            .catch((err) => console.log(err))
+        if (date != null && account != null && vendor != null && amount != null && category != null) {
+            alert("Please fill out all required fields")
+            axios.post('http://localhost:3000/expenses/add', data)
+                .then(() => {
+                    handleClose()
+                    setShowAcc(false);
+                    setShowCat(false);
+                    clearFormValues()
+                })
+                .catch((err) => {
+                    console.log(err);
+                    alert("Error adding expense, please try again.")
+                })
+        } else {
+            alert("Please fill out all required fields")
+        }
     }
 
     function EditExpenses() {
@@ -105,7 +117,6 @@ const Expenses = () => {
         checkedExps.forEach(expense => {
             // axios.put(`http://localhost:3000/expenses/${???}`, data) TO DO!!
             //     .then(() => {
-            //         getExpenses()
             //     })
             //     .catch((err) => console.log(err))
         });
@@ -117,7 +128,10 @@ const Expenses = () => {
                 .then(() => {
                     getExpenses()
                 })
-                .catch((err) => console.log(err))
+                .catch((err) => {
+                    console.log(err);
+                    alert("Error deleting expense(s), please try again.")
+                })
         });
     }
 
@@ -129,7 +143,7 @@ const Expenses = () => {
         } else {
             setShowAcc(false)
             const selectedOption = e.target.children.item(e.target.selectedIndex);
-            if (e.target.value != "0" && e.target.value != "-1" && selectedOption != null) { //if not a new account and not first option
+            if (e.target.value != "" && e.target.value != "-1" && selectedOption != null) { //if not a new account and not first option
                 setAccount(selectedOption.innerHTML)
             }
         }
@@ -144,7 +158,7 @@ const Expenses = () => {
         } else {
             setShowCat(false)
             const selectedOption = e.target.children.item(e.target.selectedIndex);
-            if (e.target.value != "0" && e.target.value != "1" && selectedOption != null) {
+            if (e.target.value != "" && e.target.value != "1" && selectedOption != null) {
                 setCategory(selectedOption.innerHTML)
             }
         }
@@ -168,6 +182,11 @@ const Expenses = () => {
         } else {
             setCheckedExps([])
         }
+    }
+
+    function handleDateChange(e: React.ChangeEvent<HTMLInputElement>) {
+        setDate(e.target.value)
+        setExpenses([...expenses, { ...expense, date }]);
     }
 
     return (
@@ -246,7 +265,7 @@ const Expenses = () => {
                                     if (editMode) {
                                         return (<tr key={expense._id}>
                                             <td><Form.Check checked={checkedExps.includes(expense._id)} id={expense._id} className='text-center' onChange={handleCheck} /></td>
-                                            <td>{expense.date.substring(0, 10)}</td>
+                                            <td><Form.Control type="text" size="sm" value={expense.date} onChange={handleDateChange} /></td>
                                             <td>{expense.account}</td>
                                             <td>{expense.vendor}</td>
                                             <td>{expense.amount}</td>
@@ -273,7 +292,7 @@ const Expenses = () => {
 
             {/* Add Expense Form */}
             <Modal show={showForm} onHide={handleClose} centered>
-                <Form>
+                <Form onSubmit={AddExpense}>
                     <Modal.Header closeButton>
                         <Modal.Title>Add An Expense</Modal.Title>
                     </Modal.Header>
@@ -281,6 +300,7 @@ const Expenses = () => {
                         <InputGroup className="mb-3">
                             <InputGroup.Text id="date">Date</InputGroup.Text>
                             <Form.Control
+                                required
                                 value={date}
                                 type="date"
                                 aria-label="date"
@@ -288,9 +308,9 @@ const Expenses = () => {
                                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDate(e.target.value)}
                             />
                         </InputGroup>
-                        <Form.Select onChange={handleAccount} value={accSelect}
+                        <Form.Select required onChange={handleAccount} value={accSelect}
                             aria-label="Default select example" className="mb-3">
-                            <option value="0">Select or Add an Account</option>
+                            <option value="">Select or Add an Account</option>
                             {[...new Set(expenses?.map((expense: Expense) => expense.account))].map((account: string) => (
                                 <option key={account} value={accCounter++} > {account}</option>
                             ))}
@@ -299,6 +319,8 @@ const Expenses = () => {
                         <InputGroup className={showAcc ? "mb-3" : "mb-3 d-none"}>
                             <InputGroup.Text id="account">Account</InputGroup.Text>
                             <Form.Control
+                                required={showAcc}
+                                type="text"
                                 value={newAccount}
                                 aria-label="newAccount"
                                 aria-describedby="newAccount"
@@ -308,6 +330,8 @@ const Expenses = () => {
                         <InputGroup className="mb-3">
                             <InputGroup.Text id="vendor">Vendor</InputGroup.Text>
                             <Form.Control
+                                required
+                                type="text"
                                 value={vendor}
                                 aria-label="vendor"
                                 aria-describedby="vendor"
@@ -317,23 +341,27 @@ const Expenses = () => {
                         <InputGroup className="mb-3">
                             <InputGroup.Text id="amount">Amount</InputGroup.Text>
                             <Form.Control
+                                required
+                                type="number"
                                 value={amount}
                                 aria-label="amount"
                                 aria-describedby="amount"
                                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
                             />
                         </InputGroup>
-                        <Form.Select onChange={handleCategory} value={catSelect}
+                        <Form.Select required onChange={handleCategory} value={catSelect}
                             aria-label="Default select example" className="mb-3">
-                            <option value="0">Select or Add a Category</option>
+                            <option value="">Select or Add a Category</option>
                             {[...new Set(expenses?.map((expense: Expense) => expense.category))].map((category: string) => (
                                 <option key={category} value={category}>{category}</option>
                             ))}
-                            <option value="-1">New Category</option>
+                            <option value="-1">*New Category*</option>
                         </Form.Select>
                         <InputGroup className={showCat ? "mb-3" : "mb-3 d-none"}>
                             <InputGroup.Text id="category">Category</InputGroup.Text>
                             <Form.Control
+                                required={showCat}
+                                type="text"
                                 value={newCategory}
                                 aria-label="newCategory"
                                 aria-describedby="newCategory"
@@ -352,11 +380,10 @@ const Expenses = () => {
                         <Button variant="outline-dark" onClick={handleClose}>
                             Close
                         </Button>
-                        <Button variant="dark" onClick={AddExpense}>
+                        <Button variant="dark" type="submit">
                             Add
                         </Button>
                     </Modal.Footer>
-
                 </Form>
             </Modal >
         </>
