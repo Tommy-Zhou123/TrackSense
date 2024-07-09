@@ -10,13 +10,13 @@ import Button from 'react-bootstrap/Button';
 import Form from 'react-bootstrap/Form';
 import InputGroup from 'react-bootstrap/InputGroup';
 import Table from 'react-bootstrap/Table';
-import { Modal } from 'react-bootstrap';
+import { FormControlProps, Modal } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 
 
 interface Expense {
     _id: string
-    date: string, //TODO: CHANGE to DATE type
+    date: Date, //TODO: CHANGE to DATE type
     account: string,
     vendor: string,
     category: string,
@@ -29,6 +29,10 @@ let catCounter = 1;
 const generateCatID = () => {
     return `${catCounter++}`;
 }
+
+const formatDate = (date: Date) => {
+    return date.toISOString().split('T')[0];
+};
 
 const Expenses = () => {
     let accCounter = 1;
@@ -46,8 +50,9 @@ const Expenses = () => {
     const [showAcc, setShowAcc] = useState(false);
 
     const [editMode, setEditMode] = useState(false);
+    const [editId, setEditId] = useState('');
 
-    const [date, setDate] = useState('');
+    const [date, setDate] = useState<Date>(new Date());
     const [account, setAccount] = useState('');
     const [vendor, setVendor] = useState('');
     const [amount, setAmount] = useState('');
@@ -60,11 +65,13 @@ const Expenses = () => {
     const handleShow = () => setShowForm(true);
 
     useEffect(() => {
-        getExpenses()
+        if (!editMode) {
+            getExpenses()
+        }
     }, [expenses]) //TODO: CHECK IF THIS IS CORRECT
 
     function clearFormValues() {
-        setDate('');
+        setDate(new Date());
         setAccount('');
         setVendor('');
         setAmount('');
@@ -79,7 +86,11 @@ const Expenses = () => {
     function getExpenses() {
         axios.get('http://localhost:3000/expenses')
             .then((response) => {
-                setExpenses(response.data.expenses)
+                const expensesWithDates = response.data.expenses.map((expense: any) => ({
+                    ...expense,
+                    date: new Date(expense.date)
+                }));
+                setExpenses(expensesWithDates);
             })
             .catch((err) => {
                 console.log(err);
@@ -89,11 +100,10 @@ const Expenses = () => {
 
     function AddExpense(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault()
-        const data = {
-            date, account, vendor, amount, category, notes
-        }
         if (date != null && account != null && vendor != null && amount != null && category != null) {
-            alert("Please fill out all required fields")
+            const data = {
+                date, account, vendor, amount, category, notes
+            }
             axios.post('http://localhost:3000/expenses/add', data)
                 .then(() => {
                     handleClose()
@@ -111,15 +121,13 @@ const Expenses = () => {
     }
 
     function EditExpenses() {
-        const data = {
-            date, account, vendor, amount, category, notes
-        }
-        checkedExps.forEach(expense => {
-            // axios.put(`http://localhost:3000/expenses/${???}`, data) TO DO!!
-            //     .then(() => {
-            //     })
-            //     .catch((err) => console.log(err))
+        expenses.forEach(expense => {
+            axios.put(`http://localhost:3000/expenses/${expense._id}`, expense)
+                .then(() => {
+                })
+                .catch((err) => console.log(err))
         });
+        setEditMode(false);
     }
 
     function DeleteExpenses() {
@@ -184,10 +192,73 @@ const Expenses = () => {
         }
     }
 
-    function handleDateChange(e: React.ChangeEvent<HTMLInputElement>) {
-        setDate(e.target.value)
-        setExpenses([...expenses, { ...expense, date }]);
+    function editDate(expense: Expense, d: string) {
+        let day: Date = new Date(d);
+        let updatedExpenses: Expense[] =
+            expenses.map((exp) => {
+                if (exp._id === expense._id) {
+                    return { ...exp, date: day };
+                }
+                return exp;
+            });
+        setExpenses(updatedExpenses);
     }
+
+    function editAccount(expense: Expense, a: string) {
+        let updatedExpenses: Expense[] =
+            expenses.map((exp) => {
+                if (exp._id === expense._id) {
+                    return { ...exp, account: a };
+                }
+                return exp;
+            });
+        setExpenses(updatedExpenses);
+    }
+
+    function editVendor(expense: Expense, v: string) {
+        let updatedExpenses: Expense[] =
+            expenses.map((exp) => {
+                if (exp._id === expense._id) {
+                    return { ...exp, vendor: v };
+                }
+                return exp;
+            });
+        setExpenses(updatedExpenses);
+    }
+
+    function editAmount(expense: Expense, a: number) {
+        let updatedExpenses: Expense[] =
+            expenses.map((exp) => {
+                if (exp._id === expense._id) {
+                    return { ...exp, amount: a };
+                }
+                return exp;
+            });
+        setExpenses(updatedExpenses);
+    }
+
+    function editCategory(expense: Expense, c: string) {
+        let updatedExpenses: Expense[] =
+            expenses.map((exp) => {
+                if (exp._id === expense._id) {
+                    return { ...exp, category: c };
+                }
+                return exp;
+            });
+        setExpenses(updatedExpenses);
+    }
+
+    function editNotes(expense: Expense, n: string) {
+        let updatedExpenses: Expense[] =
+            expenses.map((exp) => {
+                if (exp._id === expense._id) {
+                    return { ...exp, notes: n };
+                }
+                return exp;
+            });
+        setExpenses(updatedExpenses);
+    }
+
 
     return (
         <>
@@ -262,20 +333,30 @@ const Expenses = () => {
                                     <td>Amazon Purchase</td>
                                 </tr> */}
                                 {expenses?.map((expense: Expense) => {
-                                    if (editMode) {
+                                    if (editId == expense._id) {
                                         return (<tr key={expense._id}>
                                             <td><Form.Check checked={checkedExps.includes(expense._id)} id={expense._id} className='text-center' onChange={handleCheck} /></td>
-                                            <td><Form.Control type="text" size="sm" value={expense.date} onChange={handleDateChange} /></td>
-                                            <td>{expense.account}</td>
-                                            <td>{expense.vendor}</td>
-                                            <td>{expense.amount}</td>
-                                            <td>{expense.category}</td>
-                                            <td>{expense.notes ? expense.notes : ""}</td>
+                                            <td><Form.Control type="date" size="sm" value={formatDate(expense.date)} onChange={(e) => { editDate(expense, e.target.value) }} /></td>
+                                            <td><Form.Control type="text" size="sm" value={expense.account} onChange={(e) => { setAccount(e.target.value) }} /></td>
+                                            <td><Form.Control type="text" size="sm" value={expense.vendor} onChange={(e) => { }} /></td>
+                                            <td><Form.Control type="text" size="sm" value={expense.amount} onChange={(e) => { }} /></td>
+                                            <td><Form.Control type="text" size="sm" value={expense.category} onChange={(e) => { }} /></td>
+                                            <td><Form.Control type="text" size="sm" value={expense.notes ? expense.notes : ""} onChange={(e) => { }} /></td>
+                                        </tr>)
+                                    } else if (editMode) {
+                                        return (<tr key={expense._id}>
+                                            <td><Form.Check checked={checkedExps.includes(expense._id)} id={expense._id} className='text-center' onChange={handleCheck} /></td>
+                                            <td><Form.Control type="date" size="sm" value={formatDate(expense.date)} onChange={(e) => { editDate(expense, e.target.value) }} /></td>
+                                            <td><Form.Control type="text" size="sm" value={expense.account} onChange={(e) => { editAccount(expense, e.target.value) }} /></td>
+                                            <td><Form.Control type="text" size="sm" value={expense.vendor} onChange={(e) => { editVendor(expense, e.target.value) }} /></td>
+                                            <td><Form.Control type="number" size="sm" value={expense.amount} onChange={(e) => { editAmount(expense, e.target.value) }} /></td>
+                                            <td><Form.Control type="text" size="sm" value={expense.category} onChange={(e) => { editCategory(expense, e.target.value) }} /></td>
+                                            <td><Form.Control type="text" size="sm" value={expense.notes ? expense.notes : ""} onChange={(e) => { editNotes(expense, e.target.value) }} /></td>
                                         </tr>)
                                     } else {
                                         return (<tr key={expense._id}>
                                             <td><Form.Check checked={checkedExps.includes(expense._id)} id={expense._id} className='text-center' onChange={handleCheck} /></td>
-                                            <td>{expense.date.substring(0, 10)}</td>
+                                            <td>{formatDate(expense.date)}</td>
                                             <td>{expense.account}</td>
                                             <td>{expense.vendor}</td>
                                             <td>{expense.amount}</td>
@@ -301,11 +382,11 @@ const Expenses = () => {
                             <InputGroup.Text id="date">Date</InputGroup.Text>
                             <Form.Control
                                 required
-                                value={date}
+                                value={formatDate(date)}
                                 type="date"
                                 aria-label="date"
                                 aria-describedby="date"
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDate(e.target.value)}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDate(new Date(Date.parse(e.target.value)))}
                             />
                         </InputGroup>
                         <Form.Select required onChange={handleAccount} value={accSelect}
