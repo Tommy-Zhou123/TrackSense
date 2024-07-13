@@ -13,6 +13,8 @@ import Table from 'react-bootstrap/Table';
 import { FormControlProps, Modal } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 
+import { SortAlphaDown, SortNumericDown, SortDown } from 'react-bootstrap-icons';
+
 
 interface Expense {
     _id: number,
@@ -270,9 +272,16 @@ const Expenses = () => {
         setEditableExpenses(updatedExpenses);
     }
 
-    function sortByDate() {
+    function sortBy(sortByProp: string) {
         let updatedExpenses: Expense[] = [...expenses];
-        updatedExpenses.sort(function (a, b) { return a.date.getTime() - b.date.getTime() });
+        if (sortByProp === "date") {
+            updatedExpenses.sort(function (a, b) { return a.date.getTime() - b.date.getTime() });
+        } else if (sortByProp === "account" || sortByProp === "vendor" || sortByProp === "category" || sortByProp === "notes") {
+            updatedExpenses.sort(function (a, b) { return a.account.localeCompare(b.account) });
+        } else if (sortByProp === "amount") {
+            updatedExpenses.sort(function (a, b) { return a.amount - b.amount });
+        }
+
         setExpenses(updatedExpenses);
     }
 
@@ -330,12 +339,12 @@ const Expenses = () => {
                             <thead>
                                 <tr>
                                     <th className='text-center'><Form.Check onChange={handleCheckAll} /></th>
-                                    <th onClick={sortByDate}>Date</th>
-                                    <th>Account</th>
-                                    <th>Vendor</th>
-                                    <th>Amount</th>
-                                    <th>Category</th>
-                                    <th>Notes</th>
+                                    <th><SortDown onClick={() => { sortBy("date") }} />Date</th>
+                                    <th><SortAlphaDown onClick={() => { sortBy("account") }} />Account</th>
+                                    <th><SortAlphaDown onClick={() => { sortBy("vendor") }} />Vendor</th>
+                                    <th><SortAlphaDown onClick={() => { sortBy("vendor") }} />Amount</th>
+                                    <th><SortNumericDown onClick={() => { sortBy("category") }} />Category</th>
+                                    <th><SortAlphaDown onClick={() => { sortBy("notes") }} />Notes</th>
                                 </tr>
                             </thead>
                             <tbody>
