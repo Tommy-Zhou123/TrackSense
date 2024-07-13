@@ -15,7 +15,7 @@ import { useNavigate } from 'react-router-dom';
 
 
 interface Expense {
-    _id: string
+    _id: number,
     date: Date, //TODO: CHANGE to DATE type
     account: string,
     vendor: string,
@@ -34,9 +34,11 @@ const formatDate = (date: Date) => {
     return date.toISOString().split('T')[0];
 };
 
+
 const Expenses = () => {
     let accCounter = 1;
     const [expenses, setExpenses] = useState<Expense[]>([]);
+    const [editableExpenses, setEditableExpenses] = useState<Expense[]>([]);
     const [checkedExps, setCheckedExps] = useState<string[]>([]);
 
     const [accSelect, setAccSelect] = useState('');
@@ -50,31 +52,27 @@ const Expenses = () => {
     const [showAcc, setShowAcc] = useState(false);
 
     const [editMode, setEditMode] = useState(false);
-    const [editId, setEditId] = useState('');
+    const [editId, setEditId] = useState(-1);
 
     const [date, setDate] = useState<Date>(new Date());
     const [account, setAccount] = useState('');
     const [vendor, setVendor] = useState('');
-    const [amount, setAmount] = useState('');
+    const [amount, setAmount] = useState(0);
     const [category, setCategory] = useState('');
     const [notes, setNotes] = useState('');
-
-    const [editedExpenses, setEditedxpenses] = useState<Expense[]>([])
 
     const handleClose = () => setShowForm(false);
     const handleShow = () => setShowForm(true);
 
     useEffect(() => {
-        if (!editMode) {
-            getExpenses()
-        }
-    }, [expenses]) //TODO: CHECK IF THIS IS CORRECT
+        getExpenses()
+    }, [])
 
     function clearFormValues() {
         setDate(new Date());
         setAccount('');
         setVendor('');
-        setAmount('');
+        setAmount(0);
         setCategory('');
         setNotes('');
         setNewAccount('');
@@ -83,13 +81,14 @@ const Expenses = () => {
         setCatSelect('');
     }
 
-    function getExpenses() {
+    function getExpenses(sort: boolean = true) {
         axios.get('http://localhost:3000/expenses')
             .then((response) => {
                 const expensesWithDates = response.data.expenses.map((expense: any) => ({
                     ...expense,
                     date: new Date(expense.date)
                 }));
+                if (sort) expensesWithDates.sort(function (a: Expense, b: Expense) { return a.date.getTime() - b.date.getTime() });
                 setExpenses(expensesWithDates);
             })
             .catch((err) => {
@@ -105,7 +104,9 @@ const Expenses = () => {
                 date, account, vendor, amount, category, notes
             }
             axios.post('http://localhost:3000/expenses/add', data)
-                .then(() => {
+                .then((res) => {
+                    let updatedExpenses: Expense[] = [...expenses, { _id: res.data._id, ...data }];
+                    setExpenses(updatedExpenses);
                     handleClose()
                     setShowAcc(false);
                     setShowCat(false);
@@ -121,20 +122,25 @@ const Expenses = () => {
     }
 
     function EditExpenses() {
-        expenses.forEach(expense => {
+        editableExpenses.forEach(expense => {
             axios.put(`http://localhost:3000/expenses/${expense._id}`, expense)
                 .then(() => {
+                    //getExpenses()
+                    setExpenses(editableExpenses)
                 })
                 .catch((err) => console.log(err))
         });
         setEditMode(false);
+        setEditId(-1);
     }
 
     function DeleteExpenses() {
         checkedExps.forEach(expense => {
             axios.delete(`http://localhost:3000/expenses/${expense} `)
-                .then(() => {
-                    getExpenses()
+                .then((res) => {
+                    let updatedExpenses: Expense[] = [...expenses];
+                    updatedExpenses = updatedExpenses.filter((exp: Expense) => exp._id != res.data._id);
+                    setExpenses(updatedExpenses);
                 })
                 .catch((err) => {
                     console.log(err);
@@ -185,80 +191,90 @@ const Expenses = () => {
     function handleCheckAll(e: React.ChangeEvent<HTMLInputElement>) {
         const { checked } = e.target;
         if (checked) {
-            setCheckedExps(expenses.map((expense) => expense._id))
+            setCheckedExps(expenses.map((expense) => expense._id.toString()))
             // setCheckedExps(["123"]) // TODO: REMOVE, ONLY FOR TESTING PURPOSES
         } else {
             setCheckedExps([])
         }
     }
 
+    function handleDbClickEdit(id: number) {
+        setEditableExpenses(expenses);
+        setEditId(id);
+    }
+
     function editDate(expense: Expense, d: string) {
         let day: Date = new Date(d);
         let updatedExpenses: Expense[] =
-            expenses.map((exp) => {
+            editableExpenses.map((exp) => {
                 if (exp._id === expense._id) {
                     return { ...exp, date: day };
                 }
                 return exp;
             });
-        setExpenses(updatedExpenses);
+        setEditableExpenses(updatedExpenses);
     }
 
     function editAccount(expense: Expense, a: string) {
         let updatedExpenses: Expense[] =
-            expenses.map((exp) => {
+            editableExpenses.map((exp) => {
                 if (exp._id === expense._id) {
                     return { ...exp, account: a };
                 }
                 return exp;
             });
-        setExpenses(updatedExpenses);
+        setEditableExpenses(updatedExpenses);
     }
 
     function editVendor(expense: Expense, v: string) {
         let updatedExpenses: Expense[] =
-            expenses.map((exp) => {
+            editableExpenses.map((exp) => {
                 if (exp._id === expense._id) {
                     return { ...exp, vendor: v };
                 }
                 return exp;
             });
-        setExpenses(updatedExpenses);
+        setEditableExpenses(updatedExpenses);
     }
 
     function editAmount(expense: Expense, a: number) {
         let updatedExpenses: Expense[] =
-            expenses.map((exp) => {
+            editableExpenses.map((exp) => {
                 if (exp._id === expense._id) {
                     return { ...exp, amount: a };
                 }
                 return exp;
             });
-        setExpenses(updatedExpenses);
+        setEditableExpenses(updatedExpenses);
     }
 
     function editCategory(expense: Expense, c: string) {
         let updatedExpenses: Expense[] =
-            expenses.map((exp) => {
+            editableExpenses.map((exp) => {
                 if (exp._id === expense._id) {
                     return { ...exp, category: c };
                 }
                 return exp;
             });
-        setExpenses(updatedExpenses);
+        setEditableExpenses(updatedExpenses);
     }
 
     function editNotes(expense: Expense, n: string) {
         let updatedExpenses: Expense[] =
-            expenses.map((exp) => {
+            editableExpenses.map((exp) => {
                 if (exp._id === expense._id) {
                     return { ...exp, notes: n };
                 }
                 return exp;
             });
-        setExpenses(updatedExpenses);
+        setEditableExpenses(updatedExpenses);
     }
 
+    function sortByDate() {
+        let updatedExpenses: Expense[] = [...expenses];
+        updatedExpenses.sort(function (a, b) { return a.date.getTime() - b.date.getTime() });
+        setExpenses(updatedExpenses);
+    }
 
     return (
         <>
@@ -271,9 +287,9 @@ const Expenses = () => {
                     <Col className='ms-auto text-end'>
                         <Button className="me-2" onClick={handleShow} variant="outline-dark">Add</Button>
                         <Button variant="outline-dark me-2">Import</Button>
-                        <Button className={editMode ? "d-none" : ""} variant="outline-dark me-2" onClick={() => { setEditMode(true) }}>Edit</Button>
-                        <Button className={editMode ? "" : "d-none"} variant="outline-dark me-2" onClick={EditExpenses}>Save</Button>
-                        <Button className={editMode ? "" : "d-none"} variant="outline-dark me-2" onClick={() => { setEditMode(false) }}>Cancel</Button>
+                        <Button className={editMode || editId != -1 ? "d-none" : ""} variant="outline-dark me-2" onClick={() => { setEditMode(true); setEditableExpenses(expenses); }}>Edit</Button>
+                        <Button className={editMode || editId != -1 ? "" : "d-none"} variant="outline-dark me-2" onClick={EditExpenses}>Save</Button>
+                        <Button className={editMode || editId != -1 ? "" : "d-none"} variant="outline-dark me-2" onClick={() => { setEditMode(false); setEditId(-1); setEditableExpenses(expenses); }}>Cancel</Button>
                         <Button variant="outline-dark" onClick={DeleteExpenses}>Delete</Button>
                     </Col>
                 </Row>
@@ -314,7 +330,7 @@ const Expenses = () => {
                             <thead>
                                 <tr>
                                     <th className='text-center'><Form.Check onChange={handleCheckAll} /></th>
-                                    <th>Date</th>
+                                    <th onClick={sortByDate}>Date</th>
                                     <th>Account</th>
                                     <th>Vendor</th>
                                     <th>Amount</th>
@@ -324,47 +340,28 @@ const Expenses = () => {
                             </thead>
                             <tbody>
                                 {/* <tr>
-                                    <td><Form.Check checked={checkedExps.includes("123")} id='123' className='text-center' onChange={handleCheck} /></td>
-                                    <td>2021-10-10</td>
-                                    <td>Bank of America</td>
-                                    <td>Amazon</td>
+                                    <td><Form.Check checked={checkedExps.includes("123")} id='123' className='text-center' onChange={handleCheck} /></td                                        return (<tr key={expense._id.toString()} onDoubleClick={() => { setEditId((prevState) => expense._id) }} >                           <td>Amazon</td>
                                     <td>100.00</td>
                                     <td>Shopping</td>
                                     <td>Amazon Purchase</td>
                                 </tr> */}
-                                {expenses?.map((expense: Expense) => {
-                                    if (editId == expense._id) {
-                                        return (<tr key={expense._id}>
-                                            <td><Form.Check checked={checkedExps.includes(expense._id)} id={expense._id} className='text-center' onChange={handleCheck} /></td>
-                                            <td><Form.Control type="date" size="sm" value={formatDate(expense.date)} onChange={(e) => { editDate(expense, e.target.value) }} /></td>
-                                            <td><Form.Control type="text" size="sm" value={expense.account} onChange={(e) => { setAccount(e.target.value) }} /></td>
-                                            <td><Form.Control type="text" size="sm" value={expense.vendor} onChange={(e) => { }} /></td>
-                                            <td><Form.Control type="text" size="sm" value={expense.amount} onChange={(e) => { }} /></td>
-                                            <td><Form.Control type="text" size="sm" value={expense.category} onChange={(e) => { }} /></td>
-                                            <td><Form.Control type="text" size="sm" value={expense.notes ? expense.notes : ""} onChange={(e) => { }} /></td>
-                                        </tr>)
-                                    } else if (editMode) {
-                                        return (<tr key={expense._id}>
-                                            <td><Form.Check checked={checkedExps.includes(expense._id)} id={expense._id} className='text-center' onChange={handleCheck} /></td>
-                                            <td><Form.Control type="date" size="sm" value={formatDate(expense.date)} onChange={(e) => { editDate(expense, e.target.value) }} /></td>
-                                            <td><Form.Control type="text" size="sm" value={expense.account} onChange={(e) => { editAccount(expense, e.target.value) }} /></td>
-                                            <td><Form.Control type="text" size="sm" value={expense.vendor} onChange={(e) => { editVendor(expense, e.target.value) }} /></td>
-                                            <td><Form.Control type="number" size="sm" value={expense.amount} onChange={(e) => { editAmount(expense, e.target.value) }} /></td>
-                                            <td><Form.Control type="text" size="sm" value={expense.category} onChange={(e) => { editCategory(expense, e.target.value) }} /></td>
-                                            <td><Form.Control type="text" size="sm" value={expense.notes ? expense.notes : ""} onChange={(e) => { editNotes(expense, e.target.value) }} /></td>
-                                        </tr>)
-                                    } else {
-                                        return (<tr key={expense._id}>
-                                            <td><Form.Check checked={checkedExps.includes(expense._id)} id={expense._id} className='text-center' onChange={handleCheck} /></td>
-                                            <td>{formatDate(expense.date)}</td>
-                                            <td>{expense.account}</td>
-                                            <td>{expense.vendor}</td>
-                                            <td>{expense.amount}</td>
-                                            <td>{expense.category}</td>
-                                            <td>{expense.notes ? expense.notes : ""}</td>
-                                        </tr>)
-                                    }
-                                })}
+                                {
+                                    editMode ? (
+                                        editableExpenses?.map((expense: Expense) => {
+                                            return <ExpenseEditableRow key={expense._id.toString()} expense={expense} checkedExps={checkedExps} handleCheck={handleCheck} editDate={editDate} editAccount={editAccount} editVendor={editVendor} editAmount={editAmount} editCategory={editCategory} editNotes={editNotes} />
+                                        })
+                                    ) : (
+                                        expenses?.map((expense: Expense) => {
+                                            if (editId === expense._id) {
+                                                const exp = editableExpenses.find(exp => exp._id === expense._id);
+                                                if (exp === undefined) return null;
+                                                return <ExpenseEditableRow key={exp._id.toString()} expense={exp} checkedExps={checkedExps} handleCheck={handleCheck} editDate={editDate} editAccount={editAccount} editVendor={editVendor} editAmount={editAmount} editCategory={editCategory} editNotes={editNotes} />
+                                            } else {
+                                                return <ExpenseRow key={expense._id.toString()} expense={expense} checkedExps={checkedExps} handleCheck={handleCheck} handleDbClickEdit={handleDbClickEdit} />
+                                            }
+                                        })
+                                    )
+                                }
                             </tbody>
                         </Table>
                     </Form>
@@ -372,7 +369,7 @@ const Expenses = () => {
             </Container >
 
             {/* Add Expense Form */}
-            <Modal show={showForm} onHide={handleClose} centered>
+            < Modal show={showForm} onHide={handleClose} centered >
                 <Form onSubmit={AddExpense}>
                     <Modal.Header closeButton>
                         <Modal.Title>Add An Expense</Modal.Title>
@@ -424,10 +421,10 @@ const Expenses = () => {
                             <Form.Control
                                 required
                                 type="number"
-                                value={amount}
+                                value={amount != 0 ? amount : ""}
                                 aria-label="amount"
                                 aria-describedby="amount"
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(Number(e.target.value))}
                             />
                         </InputGroup>
                         <Form.Select required onChange={handleCategory} value={catSelect}
@@ -471,5 +468,30 @@ const Expenses = () => {
     )
 }
 
+
+// editable expense table row component
+function ExpenseEditableRow({ expense, checkedExps, handleCheck, editDate, editAccount, editVendor, editAmount, editCategory, editNotes }: any) {
+    return (<tr key={expense._id.toString()}>
+        <td><Form.Check checked={checkedExps.includes(expense._id.toString())} id={expense._id.toString()} className='text-center' onChange={handleCheck} /></td>
+        <td><Form.Control type="date" size="sm" value={formatDate(expense.date)} onChange={(e) => { editDate(expense, e.target.value) }} /></td>
+        <td><Form.Control type="text" size="sm" value={expense.account} onChange={(e) => { editAccount(expense, e.target.value) }} /></td>
+        <td><Form.Control type="text" size="sm" value={expense.vendor} onChange={(e) => { editVendor(expense, e.target.value) }} /></td>
+        <td><Form.Control type="number" size="sm" value={expense.amount} onChange={(e) => { editAmount(expense, Number(e.target.value)) }} /></td>
+        <td><Form.Control type="text" size="sm" value={expense.category} onChange={(e) => { editCategory(expense, e.target.value) }} /></td>
+        <td><Form.Control type="text" size="sm" value={expense.notes ? expense.notes : ""} onChange={(e) => { editNotes(expense, e.target.value) }} /></td>
+    </tr>)
+}
+
+function ExpenseRow({ expense, checkedExps, handleCheck, handleDbClickEdit }: any) {
+    return (<tr key={expense._id.toString()} onDoubleClick={() => { handleDbClickEdit(expense._id) }} >
+        <td><Form.Check checked={checkedExps.includes(expense._id.toString())} id={expense._id.toString()} className='text-center' onChange={handleCheck} /></td>
+        <td>{formatDate(expense.date)}</td>
+        <td>{expense.account}</td>
+        <td>{expense.vendor}</td>
+        <td>{expense.amount}</td>
+        <td>{expense.category}</td>
+        <td>{expense.notes ? expense.notes : ""}</td>
+    </tr>)
+}
 
 export default Expenses

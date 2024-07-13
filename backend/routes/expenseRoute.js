@@ -94,7 +94,9 @@ router.delete("/:id", async (req, res) => {
 		if (!result) {
 			return res.status(404).send({ message: "Expense not found" })
 		}
-		return res.status(200).send({ message: "Expense deleted successfully!" })
+		return res
+			.status(200)
+			.send({ _id: id, message: "Expense deleted successfully!" })
 	} catch (err) {
 		console.log(err.message)
 		res.status(500).send({ message: err.message })
