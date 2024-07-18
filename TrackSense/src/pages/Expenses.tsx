@@ -13,7 +13,7 @@ import Table from 'react-bootstrap/Table';
 import { FormControlProps, Modal } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 
-import { SortAlphaDown, SortNumericDown, SortDown } from 'react-bootstrap-icons';
+import { SortAlphaDown, SortNumericDown, SortDown, SortUp, SortAlphaUp, SortNumericUp } from 'react-bootstrap-icons';
 
 
 interface Expense {
@@ -62,6 +62,13 @@ const Expenses = () => {
     const [amount, setAmount] = useState(0);
     const [category, setCategory] = useState('');
     const [notes, setNotes] = useState('');
+
+    const [sortDate, setSortDate] = useState<'down' | 'up'>('down');
+    const [sortAccount, setSortAccount] = useState<'down' | 'up'>('down');
+    const [sortVendor, setSortVendor] = useState<'down' | 'up'>('down');
+    const [sortAmount, setSortAmount] = useState<'down' | 'up'>('down');
+    const [sortCategory, setSortCategory] = useState<'down' | 'up'>('down');
+    const [sortNotes, setSortNotes] = useState<'down' | 'up'>('down');
 
     const handleClose = () => setShowForm(false);
     const handleShow = () => setShowForm(true);
@@ -272,14 +279,23 @@ const Expenses = () => {
         setEditableExpenses(updatedExpenses);
     }
 
-    function sortBy(sortByProp: string) {
+    function sortBy(sortByProp: string, sort: "down" | "up" = "down") {
         let updatedExpenses: Expense[] = [...expenses];
         if (sortByProp === "date") {
-            updatedExpenses.sort(function (a, b) { return a.date.getTime() - b.date.getTime() });
+            if (sort === "down")
+                updatedExpenses.sort(function (a, b) { return a.date.getTime() - b.date.getTime() });
+            else
+                updatedExpenses.sort(function (a, b) { return b.date.getTime() - a.date.getTime() });
         } else if (sortByProp === "account" || sortByProp === "vendor" || sortByProp === "category" || sortByProp === "notes") {
-            updatedExpenses.sort(function (a, b) { return a.account.localeCompare(b.account) });
+            if (sort === "down")
+                updatedExpenses.sort(function (a, b) { return a.account.localeCompare(b.account) });
+            else
+                updatedExpenses.sort(function (a, b) { return b.account.localeCompare(a.account) });
         } else if (sortByProp === "amount") {
-            updatedExpenses.sort(function (a, b) { return a.amount - b.amount });
+            if (sort === "down")
+                updatedExpenses.sort(function (a, b) { return a.amount - b.amount });
+            else
+                updatedExpenses.sort(function (a, b) { return b.amount - a.amount });
         }
 
         setExpenses(updatedExpenses);
@@ -339,12 +355,12 @@ const Expenses = () => {
                             <thead>
                                 <tr>
                                     <th className='text-center'><Form.Check onChange={handleCheckAll} /></th>
-                                    <th><SortDown onClick={() => { sortBy("date") }} />Date</th>
-                                    <th><SortAlphaDown onClick={() => { sortBy("account") }} />Account</th>
-                                    <th><SortAlphaDown onClick={() => { sortBy("vendor") }} />Vendor</th>
-                                    <th><SortAlphaDown onClick={() => { sortBy("vendor") }} />Amount</th>
-                                    <th><SortNumericDown onClick={() => { sortBy("category") }} />Category</th>
-                                    <th><SortAlphaDown onClick={() => { sortBy("notes") }} />Notes</th>
+                                    <th>{sortDate == "down" ? <SortUp onClick={() => { sortBy("date", sortDate); setSortDate("up") }} /> : <SortDown onClick={() => { sortBy("date", sortDate); setSortDate("down") }} />}Date</th>
+                                    <th>{sortAccount == "down" ? <SortAlphaUp onClick={() => { sortBy("account", sortAccount); setSortAccount("up") }} /> : <SortAlphaDown onClick={() => { sortBy("account", sortAccount); setSortAccount("down") }} />}Account</th>
+                                    <th>{sortVendor == "down" ? <SortAlphaUp onClick={() => { sortBy("vendor", sortVendor); setSortVendor("up") }} /> : <SortAlphaDown onClick={() => { sortBy("vendor", sortVendor); setSortVendor("down") }} />}Vendor</th>
+                                    <th>{sortAmount == "down" ? <SortAlphaUp onClick={() => { sortBy("amount", sortAmount); setSortAmount("up") }} /> : <SortAlphaDown onClick={() => { sortBy("amount", sortAmount); setSortAmount("down") }} />}Amount</th>
+                                    <th>{sortCategory == "down" ? <SortNumericUp onClick={() => { sortBy("category", sortCategory); setSortCategory("up") }} /> : <SortNumericDown onClick={() => { sortBy("category", sortCategory); setSortCategory("down") }} />}Category</th>
+                                    <th>{sortNotes == "down" ? <SortAlphaUp onClick={() => { sortBy("notes", sortNotes); setSortNotes("up") }} /> : <SortAlphaDown onClick={() => { sortBy("notes", sortNotes); setSortNotes("down") }} />}Notes</th>
                                 </tr>
                             </thead>
                             <tbody>
