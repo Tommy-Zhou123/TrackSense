@@ -26,7 +26,13 @@ interface Expense {
     notes: string,
 }
 
+type ExpensePart = "none" | "date" | "account" | "vendor" | "amount" | "category" | "notes";
+
+
+
 let catCounter = 1;
+
+
 
 const generateCatID = () => {
     return `${catCounter++}`;
@@ -63,12 +69,18 @@ const Expenses = () => {
     const [category, setCategory] = useState('');
     const [notes, setNotes] = useState('');
 
+    const [groupMode, setGroupMode] = useState<ExpensePart>("none");
+
     const [sortDate, setSortDate] = useState<'down' | 'up'>('down');
     const [sortAccount, setSortAccount] = useState<'down' | 'up'>('down');
     const [sortVendor, setSortVendor] = useState<'down' | 'up'>('down');
     const [sortAmount, setSortAmount] = useState<'down' | 'up'>('down');
     const [sortCategory, setSortCategory] = useState<'down' | 'up'>('down');
     const [sortNotes, setSortNotes] = useState<'down' | 'up'>('down');
+
+    const [groupBySelect, setGroupBySelect] = useState('none');
+
+    let prevGroup = "";
 
     const handleClose = () => setShowForm(false);
     const handleShow = () => setShowForm(true);
@@ -279,7 +291,7 @@ const Expenses = () => {
         setEditableExpenses(updatedExpenses);
     }
 
-    function sortBy(sortByProp: string, sort: "down" | "up" = "down") {
+    function sortBy(sortByProp: ExpensePart, sort: "down" | "up" = "down") {
         let updatedExpenses: Expense[] = [...expenses];
         if (sortByProp === "date") {
             if (sort === "down")
@@ -309,7 +321,7 @@ const Expenses = () => {
                     <Col className="fs-1" >
                         <div>Expenses</div>
                     </Col>
-                    <Col className='ms-auto text-end'>
+                    <Col className='d-flex flex-nowrap justify-content-end'>
                         <Button className="me-2" onClick={handleShow} variant="outline-dark">Add</Button>
                         <Button variant="outline-dark me-2">Import</Button>
                         <Button className={editMode || editId != -1 ? "d-none" : ""} variant="outline-dark me-2" onClick={() => { setEditMode(true); setEditableExpenses(expenses); }}>Edit</Button>
@@ -324,16 +336,15 @@ const Expenses = () => {
                             <div className="me-3">Group By:</div>
                             <Dropdown data-bs-theme="light">
                                 <Dropdown.Toggle id="groupBy" variant="outline-dark">
-                                    Select An Account
+                                    Select
                                 </Dropdown.Toggle>
                                 <Dropdown.Menu>
-                                    <Dropdown.Item href="#/action-1">
-                                        Action
-                                    </Dropdown.Item>
-                                    <Dropdown.Item href="#/action-2">Another action</Dropdown.Item>
-                                    <Dropdown.Item href="#/action-3">Something else</Dropdown.Item>
-                                    <Dropdown.Divider />
-                                    <Dropdown.Item href="#/action-4">Separated link</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => { getExpenses(); setGroupMode("none"); }}>None</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => { sortBy("date"); setGroupMode("date"); }}>Date</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => { sortBy("account"); setGroupMode("account"); }}>Account</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => { sortBy("vendor"); setGroupMode("vendor"); }}>Vendor</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => { sortBy("amount"); setGroupMode("amount"); }}>Amount</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => { sortBy("category"); setGroupMode("category"); }}>Category</Dropdown.Item>
                                 </Dropdown.Menu>
                             </Dropdown>
                         </Stack>
@@ -381,13 +392,45 @@ const Expenses = () => {
                                                 const exp = editableExpenses.find(exp => exp._id === expense._id);
                                                 if (exp === undefined) return null;
                                                 return <ExpenseEditableRow key={exp._id.toString()} expense={exp} checkedExps={checkedExps} handleCheck={handleCheck} editDate={editDate} editAccount={editAccount} editVendor={editVendor} editAmount={editAmount} editCategory={editCategory} editNotes={editNotes} />
+                                            } else if (groupMode == "date" && prevGroup != formatDate(expense.date)) {
+                                                prevGroup = formatDate(expense.date);
+                                                return (<>
+                                                    <tr><td className="bg-light" colSpan={7}>{formatDate(expense.date)}</td></tr>
+                                                    <ExpenseRow key={expense._id.toString()} expense={expense} checkedExps={checkedExps} handleCheck={handleCheck} handleDbClickEdit={handleDbClickEdit} />
+                                                </>)
+                                            } else if (groupMode == "account" && prevGroup != expense.account) {
+                                                prevGroup = expense.account;
+                                                return (<>
+                                                    <tr><td className="bg-light" colSpan={7}>{expense.account}</td></tr>
+                                                    <ExpenseRow key={expense._id.toString()} expense={expense} checkedExps={checkedExps} handleCheck={handleCheck} handleDbClickEdit={handleDbClickEdit} />
+                                                </>)
+                                            } else if (groupMode == "vendor" && prevGroup != expense.vendor) {
+                                                prevGroup = expense.vendor;
+                                                return (<>
+                                                    <tr><td className="bg-light" colSpan={7}>{expense.vendor}</td></tr>
+                                                    <ExpenseRow key={expense._id.toString()} expense={expense} checkedExps={checkedExps} handleCheck={handleCheck} handleDbClickEdit={handleDbClickEdit} />
+                                                </>)
+                                            } else if (groupMode == "amount" && prevGroup != expense.amount.toString()) {
+                                                prevGroup = expense.amount.toString();
+                                                return (<>
+                                                    <tr><td className="bg-light" colSpan={7}>{expense.amount}</td></tr>
+                                                    <ExpenseRow key={expense._id.toString()} expense={expense} checkedExps={checkedExps} handleCheck={handleCheck} handleDbClickEdit={handleDbClickEdit} />
+                                                </>)
+                                            } else if (groupMode == "category" && prevGroup != expense.category) {
+                                                prevGroup = expense.category;
+                                                return (<>
+                                                    <tr><td className="bg-light" colSpan={7}>{expense.category}</td></tr>
+                                                    <ExpenseRow key={expense._id.toString()} expense={expense} checkedExps={checkedExps} handleCheck={handleCheck} handleDbClickEdit={handleDbClickEdit} />
+                                                </>)
                                             } else {
-                                                return <ExpenseRow key={expense._id.toString()} expense={expense} checkedExps={checkedExps} handleCheck={handleCheck} handleDbClickEdit={handleDbClickEdit} />
+                                                return (<>
+                                                    <ExpenseRow key={expense._id.toString()} expense={expense} checkedExps={checkedExps} handleCheck={handleCheck} handleDbClickEdit={handleDbClickEdit} />
+                                                </>)
                                             }
                                         })
                                     )
                                 }
-                            </tbody>
+                            </tbody >
                         </Table>
                     </Form>
                 </Row>
