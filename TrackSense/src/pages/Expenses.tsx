@@ -30,12 +30,12 @@ type ExpensePart = "none" | "date" | "account" | "vendor" | "amount" | "category
 
 
 
-let catCounter = 1;
+let groupCounter: number = 1;
 
+let expenseParts: ExpensePart[] = ["none", "date", "account", "vendor", "amount", "category", "notes"];
 
-
-const generateCatID = () => {
-    return `${catCounter++}`;
+const generateGroupID = () => {
+    return `${groupCounter++}`;
 }
 
 const formatDate = (date: Date) => {
@@ -78,15 +78,18 @@ const Expenses = () => {
     const [sortCategory, setSortCategory] = useState<'down' | 'up'>('down');
     const [sortNotes, setSortNotes] = useState<'down' | 'up'>('down');
 
-    const [groupBySelect, setGroupBySelect] = useState('none');
+    const [groupBySelect, setGroupBySelect] = useState<ExpensePart>('category');
+    const [searchBySelect, setSearchBySelect] = useState<string>('category');
 
     let prevGroup = "";
+    let lightBg = false;
 
     const handleClose = () => setShowForm(false);
     const handleShow = () => setShowForm(true);
 
     useEffect(() => {
         getExpenses()
+        lightBg = false;
     }, [])
 
     function clearFormValues() {
@@ -313,6 +316,25 @@ const Expenses = () => {
         setExpenses(updatedExpenses);
     }
 
+    function filterBySearch(filterBy: string, searchTerm: string) {
+        let updatedExpenses: Expense[] = [...expenses];
+        if (filterBy === "date") {
+            updatedExpenses.filter(expense => { return formatDate(expense.date).includes(searchTerm) });
+        } else if (filterBy === "account") {
+            updatedExpenses.filter(expense => { return expense.account.includes(searchTerm) });
+        } else if (filterBy === "vendor") {
+            updatedExpenses.filter(expense => { return expense.vendor.includes(searchTerm) });
+        } else if (filterBy === "category") {
+            updatedExpenses.filter(expense => { return expense.category.includes(searchTerm) });
+        } else if (filterBy === "amount") {
+            updatedExpenses.filter(expense => { return expense.amount.toString() === searchTerm });
+        } else if (filterBy === "notes") {
+            updatedExpenses.filter(expense => { return expense.notes.includes(searchTerm) });
+        }
+
+        setExpenses(updatedExpenses);
+    }
+
     return (
         <>
             <Header />
@@ -356,7 +378,13 @@ const Expenses = () => {
                                 placeholder="Search"
                                 aria-label="Search"
                                 aria-describedby="basic-addon1"
+                                onChange={(e) => { filterBySearch(searchBySelect, e.target.value) }}
                             />
+                            <Form.Select value={searchBySelect} onChange={(e) => { setSearchBySelect(e.target.value) }}
+                                aria-label="Default select example" className="mb-3">
+                                <option value="none">Select or Add an Account</option>
+                                <option value="-1">New Account</option>
+                            </Form.Select>
                         </InputGroup>
                     </Col>
                 </Row>
@@ -365,13 +393,13 @@ const Expenses = () => {
                         <Table bordered hover>
                             <thead>
                                 <tr>
-                                    <th className='text-center'><Form.Check onChange={handleCheckAll} /></th>
-                                    <th>{sortDate == "down" ? <SortUp onClick={() => { sortBy("date", sortDate); setSortDate("up") }} /> : <SortDown onClick={() => { sortBy("date", sortDate); setSortDate("down") }} />}Date</th>
-                                    <th>{sortAccount == "down" ? <SortAlphaUp onClick={() => { sortBy("account", sortAccount); setSortAccount("up") }} /> : <SortAlphaDown onClick={() => { sortBy("account", sortAccount); setSortAccount("down") }} />}Account</th>
-                                    <th>{sortVendor == "down" ? <SortAlphaUp onClick={() => { sortBy("vendor", sortVendor); setSortVendor("up") }} /> : <SortAlphaDown onClick={() => { sortBy("vendor", sortVendor); setSortVendor("down") }} />}Vendor</th>
-                                    <th>{sortAmount == "down" ? <SortAlphaUp onClick={() => { sortBy("amount", sortAmount); setSortAmount("up") }} /> : <SortAlphaDown onClick={() => { sortBy("amount", sortAmount); setSortAmount("down") }} />}Amount</th>
-                                    <th>{sortCategory == "down" ? <SortNumericUp onClick={() => { sortBy("category", sortCategory); setSortCategory("up") }} /> : <SortNumericDown onClick={() => { sortBy("category", sortCategory); setSortCategory("down") }} />}Category</th>
-                                    <th>{sortNotes == "down" ? <SortAlphaUp onClick={() => { sortBy("notes", sortNotes); setSortNotes("up") }} /> : <SortAlphaDown onClick={() => { sortBy("notes", sortNotes); setSortNotes("down") }} />}Notes</th>
+                                    <th className='text-center bg-light'><Form.Check onChange={handleCheckAll} /></th>
+                                    <th className='bg-light'>{sortDate == "down" ? <SortUp onClick={() => { sortBy("date", sortDate); setSortDate("up") }} /> : <SortDown onClick={() => { sortBy("date", sortDate); setSortDate("down") }} />}Date</th>
+                                    <th className='bg-light'>{sortAccount == "down" ? <SortAlphaUp onClick={() => { sortBy("account", sortAccount); setSortAccount("up") }} /> : <SortAlphaDown onClick={() => { sortBy("account", sortAccount); setSortAccount("down") }} />}Account</th>
+                                    <th className='bg-light'>{sortVendor == "down" ? <SortAlphaUp onClick={() => { sortBy("vendor", sortVendor); setSortVendor("up") }} /> : <SortAlphaDown onClick={() => { sortBy("vendor", sortVendor); setSortVendor("down") }} />}Vendor</th>
+                                    <th className='bg-light'>{sortAmount == "down" ? <SortAlphaUp onClick={() => { sortBy("amount", sortAmount); setSortAmount("up") }} /> : <SortAlphaDown onClick={() => { sortBy("amount", sortAmount); setSortAmount("down") }} />}Amount</th>
+                                    <th className='bg-light'>{sortCategory == "down" ? <SortNumericUp onClick={() => { sortBy("category", sortCategory); setSortCategory("up") }} /> : <SortNumericDown onClick={() => { sortBy("category", sortCategory); setSortCategory("down") }} />}Category</th>
+                                    <th className='bg-light'>{sortNotes == "down" ? <SortAlphaUp onClick={() => { sortBy("notes", sortNotes); setSortNotes("up") }} /> : <SortAlphaDown onClick={() => { sortBy("notes", sortNotes); setSortNotes("down") }} />}Notes</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -383,49 +411,168 @@ const Expenses = () => {
                                 </tr> */}
                                 {
                                     editMode ? (
-                                        editableExpenses?.map((expense: Expense) => {
-                                            return <ExpenseEditableRow key={expense._id.toString()} expense={expense} checkedExps={checkedExps} handleCheck={handleCheck} editDate={editDate} editAccount={editAccount} editVendor={editVendor} editAmount={editAmount} editCategory={editCategory} editNotes={editNotes} />
+                                        editableExpenses?.map((expense: Expense, index) => {
+                                            if (groupMode === "none") lightBg = false;
+
+                                            const bg = lightBg;
+                                            const generateGroupRow = (label: string) => (
+                                                <React.Fragment key={`group-${label}-${index}`}>
+                                                    <tr>
+                                                        <td className={bg ? "bg-light" : ""} colSpan={7}>{label}</td>
+                                                    </tr>
+                                                    <ExpenseEditableRow
+                                                        key={`editable-${expense._id}`}
+                                                        expense={expense}
+                                                        checkedExps={checkedExps}
+                                                        handleCheck={handleCheck}
+                                                        bg={bg}
+                                                        editDate={editDate}
+                                                        editAccount={editAccount}
+                                                        editVendor={editVendor}
+                                                        editAmount={editAmount}
+                                                        editCategory={editCategory}
+                                                        editNotes={editNotes}
+                                                    />
+                                                </React.Fragment>
+                                            );
+
+                                            const shouldRenderGroupRow = (currentGroup: string) => {
+                                                if (prevGroup !== currentGroup) {
+                                                    prevGroup = currentGroup;
+                                                    lightBg = !lightBg;
+                                                    return true;
+                                                }
+                                                return false;
+                                            };
+
+                                            switch (groupMode) {
+                                                case "date":
+                                                    if (shouldRenderGroupRow(formatDate(expense.date))) {
+                                                        return generateGroupRow(formatDate(expense.date));
+                                                    }
+                                                    break;
+                                                case "account":
+                                                    if (shouldRenderGroupRow(expense.account)) {
+                                                        return generateGroupRow(expense.account);
+                                                    }
+                                                    break;
+                                                case "vendor":
+                                                    if (shouldRenderGroupRow(expense.vendor)) {
+                                                        return generateGroupRow(expense.vendor);
+                                                    }
+                                                    break;
+                                                case "amount":
+                                                    if (shouldRenderGroupRow(expense.amount.toString())) {
+                                                        return generateGroupRow(expense.amount.toString());
+                                                    }
+                                                    break;
+                                                case "category":
+                                                    if (shouldRenderGroupRow(expense.category)) {
+                                                        return generateGroupRow(expense.category);
+                                                    }
+                                                    break;
+                                                default:
+                                                    return (
+                                                        <ExpenseEditableRow
+                                                            key={`editable-${expense._id}`}
+                                                            expense={expense}
+                                                            checkedExps={checkedExps}
+                                                            handleCheck={handleCheck}
+                                                            bg={bg}
+                                                            editDate={editDate}
+                                                            editAccount={editAccount}
+                                                            editVendor={editVendor}
+                                                            editAmount={editAmount}
+                                                            editCategory={editCategory}
+                                                            editNotes={editNotes}
+                                                        />
+                                                    );
+                                            }
                                         })
                                     ) : (
-                                        expenses?.map((expense: Expense) => {
+                                        expenses?.map((expense: Expense, index) => {
+                                            let exp: undefined | Expense;
+                                            if (groupMode === "none") lightBg = false;
+
+                                            const bg = lightBg;
+
                                             if (editId === expense._id) {
-                                                const exp = editableExpenses.find(exp => exp._id === expense._id);
-                                                if (exp === undefined) return null;
-                                                return <ExpenseEditableRow key={exp._id.toString()} expense={exp} checkedExps={checkedExps} handleCheck={handleCheck} editDate={editDate} editAccount={editAccount} editVendor={editVendor} editAmount={editAmount} editCategory={editCategory} editNotes={editNotes} />
-                                            } else if (groupMode == "date" && prevGroup != formatDate(expense.date)) {
-                                                prevGroup = formatDate(expense.date);
-                                                return (<>
-                                                    <tr><td className="bg-light" colSpan={7}>{formatDate(expense.date)}</td></tr>
-                                                    <ExpenseRow key={expense._id.toString()} expense={expense} checkedExps={checkedExps} handleCheck={handleCheck} handleDbClickEdit={handleDbClickEdit} />
-                                                </>)
-                                            } else if (groupMode == "account" && prevGroup != expense.account) {
-                                                prevGroup = expense.account;
-                                                return (<>
-                                                    <tr><td className="bg-light" colSpan={7}>{expense.account}</td></tr>
-                                                    <ExpenseRow key={expense._id.toString()} expense={expense} checkedExps={checkedExps} handleCheck={handleCheck} handleDbClickEdit={handleDbClickEdit} />
-                                                </>)
-                                            } else if (groupMode == "vendor" && prevGroup != expense.vendor) {
-                                                prevGroup = expense.vendor;
-                                                return (<>
-                                                    <tr><td className="bg-light" colSpan={7}>{expense.vendor}</td></tr>
-                                                    <ExpenseRow key={expense._id.toString()} expense={expense} checkedExps={checkedExps} handleCheck={handleCheck} handleDbClickEdit={handleDbClickEdit} />
-                                                </>)
-                                            } else if (groupMode == "amount" && prevGroup != expense.amount.toString()) {
-                                                prevGroup = expense.amount.toString();
-                                                return (<>
-                                                    <tr><td className="bg-light" colSpan={7}>{expense.amount}</td></tr>
-                                                    <ExpenseRow key={expense._id.toString()} expense={expense} checkedExps={checkedExps} handleCheck={handleCheck} handleDbClickEdit={handleDbClickEdit} />
-                                                </>)
-                                            } else if (groupMode == "category" && prevGroup != expense.category) {
-                                                prevGroup = expense.category;
-                                                return (<>
-                                                    <tr><td className="bg-light" colSpan={7}>{expense.category}</td></tr>
-                                                    <ExpenseRow key={expense._id.toString()} expense={expense} checkedExps={checkedExps} handleCheck={handleCheck} handleDbClickEdit={handleDbClickEdit} />
-                                                </>)
-                                            } else {
-                                                return (<>
-                                                    <ExpenseRow key={expense._id.toString()} expense={expense} checkedExps={checkedExps} handleCheck={handleCheck} handleDbClickEdit={handleDbClickEdit} />
-                                                </>)
+                                                exp = editableExpenses.find(e => e._id === expense._id);
+                                            }
+
+                                            const renderRow = () => (
+                                                exp && editId === expense._id ? (
+                                                    <ExpenseEditableRow
+                                                        key={`editable-${exp._id}`}
+                                                        expense={exp}
+                                                        checkedExps={checkedExps}
+                                                        handleCheck={handleCheck}
+                                                        bg={bg}
+                                                        editDate={editDate}
+                                                        editAccount={editAccount}
+                                                        editVendor={editVendor}
+                                                        editAmount={editAmount}
+                                                        editCategory={editCategory}
+                                                        editNotes={editNotes}
+                                                    />
+                                                ) : (
+                                                    <ExpenseRow
+                                                        key={`row-${expense._id}`}
+                                                        expense={expense}
+                                                        checkedExps={checkedExps}
+                                                        handleCheck={handleCheck}
+                                                        handleDbClickEdit={handleDbClickEdit}
+                                                        bg={bg}
+                                                    />
+                                                )
+                                            );
+
+                                            const generateGroupRow = (label: string) => (
+                                                <React.Fragment key={`group-${label}-${index}`}>
+                                                    <tr>
+                                                        <td className={bg ? "bg-light" : ""} colSpan={7}>{label}</td>
+                                                    </tr>
+                                                    {renderRow()}
+                                                </React.Fragment>
+                                            );
+
+                                            const shouldRenderGroupRow = (currentGroup: string) => {
+                                                if (prevGroup !== currentGroup) {
+                                                    prevGroup = currentGroup;
+                                                    lightBg = !lightBg;
+                                                    return true;
+                                                }
+                                                return false;
+                                            };
+
+                                            switch (groupMode) {
+                                                case "date":
+                                                    if (shouldRenderGroupRow(formatDate(expense.date))) {
+                                                        return generateGroupRow(formatDate(expense.date));
+                                                    }
+                                                    break;
+                                                case "account":
+                                                    if (shouldRenderGroupRow(expense.account)) {
+                                                        return generateGroupRow(expense.account);
+                                                    }
+                                                    break;
+                                                case "vendor":
+                                                    if (shouldRenderGroupRow(expense.vendor)) {
+                                                        return generateGroupRow(expense.vendor);
+                                                    }
+                                                    break;
+                                                case "amount":
+                                                    if (shouldRenderGroupRow(expense.amount.toString())) {
+                                                        return generateGroupRow(expense.amount.toString());
+                                                    }
+                                                    break;
+                                                case "category":
+                                                    if (shouldRenderGroupRow(expense.category)) {
+                                                        return generateGroupRow(expense.category);
+                                                    }
+                                                    break;
+                                                default:
+                                                    return renderRow();
                                             }
                                         })
                                     )
@@ -538,28 +685,33 @@ const Expenses = () => {
 
 
 // editable expense table row component
-function ExpenseEditableRow({ expense, checkedExps, handleCheck, editDate, editAccount, editVendor, editAmount, editCategory, editNotes }: any) {
+function ExpenseEditableRow({ expense, checkedExps, handleCheck, editDate, editAccount, editVendor, editAmount, editCategory, editNotes, bg }: any) {
+    let bgClr = bg ? "bg-light" : "";
     return (<tr key={expense._id.toString()}>
-        <td><Form.Check checked={checkedExps.includes(expense._id.toString())} id={expense._id.toString()} className='text-center' onChange={handleCheck} /></td>
-        <td><Form.Control type="date" size="sm" value={formatDate(expense.date)} onChange={(e) => { editDate(expense, e.target.value) }} /></td>
-        <td><Form.Control type="text" size="sm" value={expense.account} onChange={(e) => { editAccount(expense, e.target.value) }} /></td>
-        <td><Form.Control type="text" size="sm" value={expense.vendor} onChange={(e) => { editVendor(expense, e.target.value) }} /></td>
-        <td><Form.Control type="number" size="sm" value={expense.amount} onChange={(e) => { editAmount(expense, Number(e.target.value)) }} /></td>
-        <td><Form.Control type="text" size="sm" value={expense.category} onChange={(e) => { editCategory(expense, e.target.value) }} /></td>
-        <td><Form.Control type="text" size="sm" value={expense.notes ? expense.notes : ""} onChange={(e) => { editNotes(expense, e.target.value) }} /></td>
+        <td className={bgClr}><Form.Check checked={checkedExps.includes(expense._id.toString())} id={expense._id.toString()} className='text-center' onChange={handleCheck} /></td>
+        <td className={bgClr}><Form.Control type="date" size="sm" value={formatDate(expense.date)} onChange={(e) => { editDate(expense, e.target.value) }} /></td>
+        <td className={bgClr}><Form.Control type="text" size="sm" value={expense.account} onChange={(e) => { editAccount(expense, e.target.value) }} /></td>
+        <td className={bgClr}><Form.Control type="text" size="sm" value={expense.vendor} onChange={(e) => { editVendor(expense, e.target.value) }} /></td>
+        <td className={bgClr}><Form.Control type="number" size="sm" value={expense.amount} onChange={(e) => { editAmount(expense, Number(e.target.value)) }} /></td>
+        <td className={bgClr}><Form.Control type="text" size="sm" value={expense.category} onChange={(e) => { editCategory(expense, e.target.value) }} /></td>
+        <td className={bgClr}><Form.Control type="text" size="sm" value={expense.notes ? expense.notes : ""} onChange={(e) => { editNotes(expense, e.target.value) }} /></td>
     </tr>)
 }
 
-function ExpenseRow({ expense, checkedExps, handleCheck, handleDbClickEdit }: any) {
+function ExpenseRow({ expense, checkedExps, handleCheck, handleDbClickEdit, bg }: any) {
+    let bgClr = bg ? "bg-light" : "";
     return (<tr key={expense._id.toString()} onDoubleClick={() => { handleDbClickEdit(expense._id) }} >
-        <td><Form.Check checked={checkedExps.includes(expense._id.toString())} id={expense._id.toString()} className='text-center' onChange={handleCheck} /></td>
-        <td>{formatDate(expense.date)}</td>
-        <td>{expense.account}</td>
-        <td>{expense.vendor}</td>
-        <td>{expense.amount}</td>
-        <td>{expense.category}</td>
-        <td>{expense.notes ? expense.notes : ""}</td>
+        <td className={bgClr}><Form.Check checked={checkedExps.includes(expense._id.toString())} id={expense._id.toString()} className='text-center' onChange={handleCheck} /></td>
+        <td className={bgClr}>{formatDate(expense.date)}</td>
+        <td className={bgClr}>{expense.account}</td>
+        <td className={bgClr}>{expense.vendor}</td>
+        <td className={bgClr}>{expense.amount}</td>
+        <td className={bgClr}>{expense.category}</td>
+        <td className={bgClr}>{expense.notes ? expense.notes : ""}</td>
     </tr>)
 }
 
 export default Expenses
+
+
+
