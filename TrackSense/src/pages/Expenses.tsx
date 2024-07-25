@@ -46,6 +46,7 @@ const formatDate = (date: Date) => {
 const Expenses = () => {
     let accCounter = 1;
     const [expenses, setExpenses] = useState<Expense[]>([]);
+    const [expensesCopy, setExpensesCopy] = useState<Expense[]>([]);
     const [editableExpenses, setEditableExpenses] = useState<Expense[]>([]);
     const [checkedExps, setCheckedExps] = useState<string[]>([]);
 
@@ -69,8 +70,6 @@ const Expenses = () => {
     const [category, setCategory] = useState('');
     const [notes, setNotes] = useState('');
 
-    const [groupMode, setGroupMode] = useState<ExpensePart>("none");
-
     const [sortDate, setSortDate] = useState<'down' | 'up'>('down');
     const [sortAccount, setSortAccount] = useState<'down' | 'up'>('down');
     const [sortVendor, setSortVendor] = useState<'down' | 'up'>('down');
@@ -78,11 +77,11 @@ const Expenses = () => {
     const [sortCategory, setSortCategory] = useState<'down' | 'up'>('down');
     const [sortNotes, setSortNotes] = useState<'down' | 'up'>('down');
 
-    const [groupBySelect, setGroupBySelect] = useState<ExpensePart>('category');
+    const [groupMode, setGroupMode] = useState<ExpensePart>("none");
     const [searchBySelect, setSearchBySelect] = useState<string>('category');
 
     let prevGroup = "";
-    let lightBg = false;
+    let lightBg = true;
 
     const handleClose = () => setShowForm(false);
     const handleShow = () => setShowForm(true);
@@ -114,6 +113,7 @@ const Expenses = () => {
                 }));
                 if (sort) expensesWithDates.sort(function (a: Expense, b: Expense) { return a.date.getTime() - b.date.getTime() });
                 setExpenses(expensesWithDates);
+                setExpensesCopy(expensesWithDates);
             })
             .catch((err) => {
                 console.log(err);
@@ -131,6 +131,8 @@ const Expenses = () => {
                 .then((res) => {
                     let updatedExpenses: Expense[] = [...expenses, { _id: res.data._id, ...data }];
                     setExpenses(updatedExpenses);
+                    let updatedExpensesCopy: Expense[] = [...expensesCopy, { _id: res.data._id, ...data }];
+                    setExpensesCopy(updatedExpensesCopy);
                     handleClose()
                     setShowAcc(false);
                     setShowCat(false);
@@ -146,11 +148,24 @@ const Expenses = () => {
     }
 
     function EditExpenses() {
+        let updatedExpenses: Expense[] = [...expenses];
+        let updatedExpensesCopy: Expense[] = [...expensesCopy];
         editableExpenses.forEach(expense => {
             axios.put(`http://localhost:3000/expenses/${expense._id}`, expense)
                 .then(() => {
-                    //getExpenses()
-                    setExpenses(editableExpenses)
+                    updatedExpenses.forEach((exp, index) => {
+                        if (exp._id === expense._id) {
+                            updatedExpenses[index] = expense;
+                        }
+                    });
+                    setExpenses(updatedExpenses);
+
+                    updatedExpensesCopy.forEach((exp, index) => {
+                        if (exp._id === expense._id) {
+                            updatedExpensesCopy[index] = expense;
+                        }
+                    });
+                    setExpensesCopy(updatedExpensesCopy);
                 })
                 .catch((err) => console.log(err))
         });
@@ -165,6 +180,11 @@ const Expenses = () => {
                     let updatedExpenses: Expense[] = [...expenses];
                     updatedExpenses = updatedExpenses.filter((exp: Expense) => exp._id != res.data._id);
                     setExpenses(updatedExpenses);
+                    console.log(updatedExpenses);
+
+                    let updatedExpensesCopy: Expense[] = [...expensesCopy];
+                    updatedExpensesCopy = updatedExpensesCopy.filter((exp: Expense) => exp._id != res.data._id);
+                    setExpensesCopy(updatedExpensesCopy);
                 })
                 .catch((err) => {
                     console.log(err);
@@ -189,7 +209,7 @@ const Expenses = () => {
     }
 
     function handleCategory(e: React.ChangeEvent<HTMLSelectElement>) {
-        // Check if last option is selected, need to creat new category
+        // Check if last option is selected, need to create new category
         if (e.target.selectedIndex == e.target.childElementCount - 1) {
             setShowCat(true)
             setCategory(newCategory)
@@ -314,25 +334,29 @@ const Expenses = () => {
         }
 
         setExpenses(updatedExpenses);
+        setExpensesCopy(updatedExpenses);
     }
 
     function filterBySearch(filterBy: string, searchTerm: string) {
-        let updatedExpenses: Expense[] = [...expenses];
-        if (filterBy === "date") {
-            updatedExpenses.filter(expense => { return formatDate(expense.date).includes(searchTerm) });
-        } else if (filterBy === "account") {
-            updatedExpenses.filter(expense => { return expense.account.includes(searchTerm) });
-        } else if (filterBy === "vendor") {
-            updatedExpenses.filter(expense => { return expense.vendor.includes(searchTerm) });
-        } else if (filterBy === "category") {
-            updatedExpenses.filter(expense => { return expense.category.includes(searchTerm) });
-        } else if (filterBy === "amount") {
-            updatedExpenses.filter(expense => { return expense.amount.toString() === searchTerm });
-        } else if (filterBy === "notes") {
-            updatedExpenses.filter(expense => { return expense.notes.includes(searchTerm) });
+        if (searchTerm === "" || searchTerm === null) {
+            setExpenses(expensesCopy);
+        } else {
+            let updatedExpenses: Expense[] = [...expensesCopy];
+            if (filterBy === "date") {
+                updatedExpenses = updatedExpenses.filter(expense => { return formatDate(expense.date).includes(searchTerm) });
+            } else if (filterBy === "account") {
+                updatedExpenses = updatedExpenses.filter(expense => { return expense.account.includes(searchTerm) });
+            } else if (filterBy === "vendor") {
+                updatedExpenses = updatedExpenses.filter(expense => { return expense.vendor.includes(searchTerm) });
+            } else if (filterBy === "category") {
+                updatedExpenses = updatedExpenses.filter(expense => { return expense.category.includes(searchTerm) });
+            } else if (filterBy === "amount") {
+                updatedExpenses = updatedExpenses.filter(expense => { return expense.amount.toString() === searchTerm });
+            } else if (filterBy === "notes") {
+                updatedExpenses = updatedExpenses.filter(expense => { return expense.notes.includes(searchTerm) });
+            }
+            setExpenses(updatedExpenses); //don't update copy to keep original data
         }
-
-        setExpenses(updatedExpenses);
     }
 
     return (
@@ -358,7 +382,7 @@ const Expenses = () => {
                             <div className="me-3">Group By:</div>
                             <Dropdown data-bs-theme="light">
                                 <Dropdown.Toggle id="groupBy" variant="outline-dark">
-                                    Select
+                                    {groupMode[0].toUpperCase() + groupMode.slice(1)}
                                 </Dropdown.Toggle>
                                 <Dropdown.Menu>
                                     <Dropdown.Item onClick={() => { getExpenses(); setGroupMode("none"); }}>None</Dropdown.Item>
@@ -373,18 +397,26 @@ const Expenses = () => {
                     </Col >
                     <Col className='ms-auto my-auto text-end'>
                         <InputGroup>
-                            <InputGroup.Text id="basic-addon1">@</InputGroup.Text>
+                            <InputGroup.Text id="searchIcon">@</InputGroup.Text>
                             <Form.Control
                                 placeholder="Search"
                                 aria-label="Search"
-                                aria-describedby="basic-addon1"
+                                aria-describedby="searchIcon"
                                 onChange={(e) => { filterBySearch(searchBySelect, e.target.value) }}
                             />
-                            <Form.Select value={searchBySelect} onChange={(e) => { setSearchBySelect(e.target.value) }}
-                                aria-label="Default select example" className="mb-3">
-                                <option value="none">Select or Add an Account</option>
-                                <option value="-1">New Account</option>
-                            </Form.Select>
+                            <Dropdown data-bs-theme="light">
+                                <Dropdown.Toggle id="searchBy" variant="outline-secondary">
+                                    {searchBySelect[0].toUpperCase() + searchBySelect.slice(1)}
+                                </Dropdown.Toggle>
+                                <Dropdown.Menu>
+                                    <Dropdown.Item onClick={() => setSearchBySelect("date")}>Date</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => setSearchBySelect("account")}>Account</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => setSearchBySelect("vendor")}>Vendor</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => setSearchBySelect("amount")}>Amount</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => setSearchBySelect("category")}>Category</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => setSearchBySelect("notes")}>Notes</Dropdown.Item>
+                                </Dropdown.Menu>
+                            </Dropdown>
                         </InputGroup>
                     </Col>
                 </Row>
@@ -414,29 +446,16 @@ const Expenses = () => {
                                         editableExpenses?.map((expense: Expense, index) => {
                                             if (groupMode === "none") lightBg = false;
 
-                                            const bg = lightBg;
                                             const generateGroupRow = (label: string) => (
                                                 <React.Fragment key={`group-${label}-${index}`}>
                                                     <tr>
-                                                        <td className={bg ? "bg-light" : ""} colSpan={7}>{label}</td>
+                                                        <td className={lightBg ? "bg-light" : ""} colSpan={7}>{label}</td>
                                                     </tr>
-                                                    <ExpenseEditableRow
-                                                        key={`editable-${expense._id}`}
-                                                        expense={expense}
-                                                        checkedExps={checkedExps}
-                                                        handleCheck={handleCheck}
-                                                        bg={bg}
-                                                        editDate={editDate}
-                                                        editAccount={editAccount}
-                                                        editVendor={editVendor}
-                                                        editAmount={editAmount}
-                                                        editCategory={editCategory}
-                                                        editNotes={editNotes}
-                                                    />
+                                                    {renderRow()}
                                                 </React.Fragment>
                                             );
 
-                                            const shouldRenderGroupRow = (currentGroup: string) => {
+                                            const renderGroup = (currentGroup: string) => {
                                                 if (prevGroup !== currentGroup) {
                                                     prevGroup = currentGroup;
                                                     lightBg = !lightBg;
@@ -445,56 +464,40 @@ const Expenses = () => {
                                                 return false;
                                             };
 
-                                            switch (groupMode) {
-                                                case "date":
-                                                    if (shouldRenderGroupRow(formatDate(expense.date))) {
-                                                        return generateGroupRow(formatDate(expense.date));
-                                                    }
-                                                    break;
-                                                case "account":
-                                                    if (shouldRenderGroupRow(expense.account)) {
-                                                        return generateGroupRow(expense.account);
-                                                    }
-                                                    break;
-                                                case "vendor":
-                                                    if (shouldRenderGroupRow(expense.vendor)) {
-                                                        return generateGroupRow(expense.vendor);
-                                                    }
-                                                    break;
-                                                case "amount":
-                                                    if (shouldRenderGroupRow(expense.amount.toString())) {
-                                                        return generateGroupRow(expense.amount.toString());
-                                                    }
-                                                    break;
-                                                case "category":
-                                                    if (shouldRenderGroupRow(expense.category)) {
-                                                        return generateGroupRow(expense.category);
-                                                    }
-                                                    break;
-                                                default:
-                                                    return (
-                                                        <ExpenseEditableRow
-                                                            key={`editable-${expense._id}`}
-                                                            expense={expense}
-                                                            checkedExps={checkedExps}
-                                                            handleCheck={handleCheck}
-                                                            bg={bg}
-                                                            editDate={editDate}
-                                                            editAccount={editAccount}
-                                                            editVendor={editVendor}
-                                                            editAmount={editAmount}
-                                                            editCategory={editCategory}
-                                                            editNotes={editNotes}
-                                                        />
-                                                    );
+                                            const renderRow = () => (
+                                                <ExpenseEditableRow
+                                                    key={`editable-${expense._id}`}
+                                                    expense={expense}
+                                                    checkedExps={checkedExps}
+                                                    handleCheck={handleCheck}
+                                                    bg={lightBg}
+                                                    editDate={editDate}
+                                                    editAccount={editAccount}
+                                                    editVendor={editVendor}
+                                                    editAmount={editAmount}
+                                                    editCategory={editCategory}
+                                                    editNotes={editNotes}
+                                                />
+                                            );
+
+                                            if (groupMode === "date" && renderGroup(formatDate(expense.date))) {
+                                                return generateGroupRow(formatDate(expense.date));
+                                            } else if (groupMode === "account" && renderGroup(expense.account)) {
+                                                return generateGroupRow(expense.account);
+                                            } else if (groupMode === "vendor" && renderGroup(expense.vendor)) {
+                                                return generateGroupRow(expense.vendor);
+                                            } else if (groupMode === "amount" && renderGroup(expense.amount.toString())) {
+                                                return generateGroupRow(expense.amount.toString());
+                                            } else if (groupMode === "category" && renderGroup(expense.category)) {
+                                                return generateGroupRow(expense.category);
+                                            } else {
+                                                return renderRow();
                                             }
                                         })
                                     ) : (
                                         expenses?.map((expense: Expense, index) => {
                                             let exp: undefined | Expense;
                                             if (groupMode === "none") lightBg = false;
-
-                                            const bg = lightBg;
 
                                             if (editId === expense._id) {
                                                 exp = editableExpenses.find(e => e._id === expense._id);
@@ -507,7 +510,7 @@ const Expenses = () => {
                                                         expense={exp}
                                                         checkedExps={checkedExps}
                                                         handleCheck={handleCheck}
-                                                        bg={bg}
+                                                        bg={lightBg}
                                                         editDate={editDate}
                                                         editAccount={editAccount}
                                                         editVendor={editVendor}
@@ -522,7 +525,7 @@ const Expenses = () => {
                                                         checkedExps={checkedExps}
                                                         handleCheck={handleCheck}
                                                         handleDbClickEdit={handleDbClickEdit}
-                                                        bg={bg}
+                                                        bg={lightBg}
                                                     />
                                                 )
                                             );
@@ -530,13 +533,13 @@ const Expenses = () => {
                                             const generateGroupRow = (label: string) => (
                                                 <React.Fragment key={`group-${label}-${index}`}>
                                                     <tr>
-                                                        <td className={bg ? "bg-light" : ""} colSpan={7}>{label}</td>
+                                                        <td className={lightBg ? "bg-light" : ""} colSpan={7}>{label}</td>
                                                     </tr>
                                                     {renderRow()}
                                                 </React.Fragment>
                                             );
 
-                                            const shouldRenderGroupRow = (currentGroup: string) => {
+                                            const renderGroup = (currentGroup: string) => {
                                                 if (prevGroup !== currentGroup) {
                                                     prevGroup = currentGroup;
                                                     lightBg = !lightBg;
@@ -545,34 +548,18 @@ const Expenses = () => {
                                                 return false;
                                             };
 
-                                            switch (groupMode) {
-                                                case "date":
-                                                    if (shouldRenderGroupRow(formatDate(expense.date))) {
-                                                        return generateGroupRow(formatDate(expense.date));
-                                                    }
-                                                    break;
-                                                case "account":
-                                                    if (shouldRenderGroupRow(expense.account)) {
-                                                        return generateGroupRow(expense.account);
-                                                    }
-                                                    break;
-                                                case "vendor":
-                                                    if (shouldRenderGroupRow(expense.vendor)) {
-                                                        return generateGroupRow(expense.vendor);
-                                                    }
-                                                    break;
-                                                case "amount":
-                                                    if (shouldRenderGroupRow(expense.amount.toString())) {
-                                                        return generateGroupRow(expense.amount.toString());
-                                                    }
-                                                    break;
-                                                case "category":
-                                                    if (shouldRenderGroupRow(expense.category)) {
-                                                        return generateGroupRow(expense.category);
-                                                    }
-                                                    break;
-                                                default:
-                                                    return renderRow();
+                                            if (groupMode === "date" && renderGroup(formatDate(expense.date))) {
+                                                return generateGroupRow(formatDate(expense.date));
+                                            } else if (groupMode === "account" && renderGroup(expense.account)) {
+                                                return generateGroupRow(expense.account);
+                                            } else if (groupMode === "vendor" && renderGroup(expense.vendor)) {
+                                                return generateGroupRow(expense.vendor);
+                                            } else if (groupMode === "amount" && renderGroup(expense.amount.toString())) {
+                                                return generateGroupRow(expense.amount.toString());
+                                            } else if (groupMode === "category" && renderGroup(expense.category)) {
+                                                return generateGroupRow(expense.category);
+                                            } else {
+                                                return renderRow();
                                             }
                                         })
                                     )
