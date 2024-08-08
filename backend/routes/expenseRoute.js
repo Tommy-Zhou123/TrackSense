@@ -1,5 +1,6 @@
 import express from "express"
 import { Expense } from "../models/expense.js"
+import { isLoggedIn } from "../middleware.js"
 
 const router = express.Router()
 
@@ -34,7 +35,7 @@ router.post("/add", async (req, res) => {
 })
 
 //Get all expenses
-router.get("/", async (req, res) => {
+router.get("/", isLoggedIn, async (req, res) => {
 	try {
 		const expenses = await Expense.find({})
 		return res.status(200).json({
@@ -48,7 +49,7 @@ router.get("/", async (req, res) => {
 })
 
 //Get an expense by ID
-router.get("/:id", async (req, res) => {
+router.get("/:id", isLoggedIn, async (req, res) => {
 	try {
 		const { id } = req.params
 		const expense = await Expense.findById(id)

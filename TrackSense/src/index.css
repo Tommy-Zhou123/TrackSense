@@ -29,3 +29,20 @@
 .form-check-input:checked {
     background-color: #232830 !important;
 }
+
+.form-floating>.form-control,
+.form-floating>.form-control-plaintext {
+    padding: 0rem 0.75rem;
+}
+
+.form-floating>.form-control,
+.form-floating>.form-control-plaintext,
+.form-floating>.form-select {
+    height: calc(3.1rem + 2px);
+    min-height: calc(3.1rem + 2px);
+    line-height: 1;
+}
+
+.form-floating>label {
+    padding: 0.75rem 0.75rem;
+}

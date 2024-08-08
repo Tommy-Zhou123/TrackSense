@@ -13,7 +13,7 @@ import Table from 'react-bootstrap/Table';
 import { FormControlProps, Modal } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 
-import { SortAlphaDown, SortNumericDown, SortDown, SortUp, SortAlphaUp, SortNumericUp } from 'react-bootstrap-icons';
+import { SortAlphaDown, SortNumericDown, SortDown, SortUp, SortAlphaUp, SortNumericUp, Search } from 'react-bootstrap-icons';
 
 
 interface Expense {
@@ -79,6 +79,7 @@ const Expenses = () => {
 
     const [groupMode, setGroupMode] = useState<ExpensePart>("none");
     const [searchBySelect, setSearchBySelect] = useState<string>('category');
+    const [searchByQuery, setSearchByQuery] = useState<string>('');
 
     let prevGroup = "";
     let lightBg = true;
@@ -343,17 +344,17 @@ const Expenses = () => {
         } else {
             let updatedExpenses: Expense[] = [...expensesCopy];
             if (filterBy === "date") {
-                updatedExpenses = updatedExpenses.filter(expense => { return formatDate(expense.date).includes(searchTerm) });
+                updatedExpenses = updatedExpenses.filter(expense => { return formatDate(expense.date).toLowerCase().includes(searchTerm.toLowerCase()) });
             } else if (filterBy === "account") {
-                updatedExpenses = updatedExpenses.filter(expense => { return expense.account.includes(searchTerm) });
+                updatedExpenses = updatedExpenses.filter(expense => { return expense.account.toLowerCase().includes(searchTerm.toLowerCase()) });
             } else if (filterBy === "vendor") {
-                updatedExpenses = updatedExpenses.filter(expense => { return expense.vendor.includes(searchTerm) });
+                updatedExpenses = updatedExpenses.filter(expense => { return expense.vendor.toLowerCase().includes(searchTerm.toLowerCase()) });
             } else if (filterBy === "category") {
-                updatedExpenses = updatedExpenses.filter(expense => { return expense.category.includes(searchTerm) });
+                updatedExpenses = updatedExpenses.filter(expense => { return expense.category.toLowerCase().includes(searchTerm.toLowerCase()) });
             } else if (filterBy === "amount") {
-                updatedExpenses = updatedExpenses.filter(expense => { return expense.amount.toString() === searchTerm });
+                updatedExpenses = updatedExpenses.filter(expense => { return expense.amount.toString().includes(searchTerm) });
             } else if (filterBy === "notes") {
-                updatedExpenses = updatedExpenses.filter(expense => { return expense.notes.includes(searchTerm) });
+                updatedExpenses = updatedExpenses.filter(expense => { return expense.notes.toLowerCase().includes(searchTerm.toLowerCase()) });
             }
             setExpenses(updatedExpenses); //don't update copy to keep original data
         }
@@ -397,24 +398,24 @@ const Expenses = () => {
                     </Col >
                     <Col className='ms-auto my-auto text-end'>
                         <InputGroup>
-                            <InputGroup.Text id="searchIcon">@</InputGroup.Text>
+                            <InputGroup.Text id="searchIcon"><Search /></InputGroup.Text>
                             <Form.Control
                                 placeholder="Search"
                                 aria-label="Search"
                                 aria-describedby="searchIcon"
-                                onChange={(e) => { filterBySearch(searchBySelect, e.target.value) }}
+                                onChange={(e) => { setSearchByQuery(e.target.value); filterBySearch(searchBySelect, e.target.value) }}
                             />
                             <Dropdown data-bs-theme="light">
                                 <Dropdown.Toggle id="searchBy" variant="outline-secondary">
                                     {searchBySelect[0].toUpperCase() + searchBySelect.slice(1)}
                                 </Dropdown.Toggle>
                                 <Dropdown.Menu>
-                                    <Dropdown.Item onClick={() => setSearchBySelect("date")}>Date</Dropdown.Item>
-                                    <Dropdown.Item onClick={() => setSearchBySelect("account")}>Account</Dropdown.Item>
-                                    <Dropdown.Item onClick={() => setSearchBySelect("vendor")}>Vendor</Dropdown.Item>
-                                    <Dropdown.Item onClick={() => setSearchBySelect("amount")}>Amount</Dropdown.Item>
-                                    <Dropdown.Item onClick={() => setSearchBySelect("category")}>Category</Dropdown.Item>
-                                    <Dropdown.Item onClick={() => setSearchBySelect("notes")}>Notes</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => { setSearchBySelect("date"); filterBySearch("date", searchByQuery) }}>Date</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => { setSearchBySelect("account"); filterBySearch("account", searchByQuery) }}>Account</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => { setSearchBySelect("vendor"); filterBySearch("vendor", searchByQuery) }}>Vendor</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => { setSearchBySelect("amount"); filterBySearch("amount", searchByQuery) }}>Amount</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => { setSearchBySelect("category"); filterBySearch("category", searchByQuery) }}>Category</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => { setSearchBySelect("notes"); filterBySearch("notes", searchByQuery) }}>Notes</Dropdown.Item>
                                 </Dropdown.Menu>
                             </Dropdown>
                         </InputGroup>

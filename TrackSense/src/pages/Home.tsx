@@ -47,7 +47,6 @@ export const Header = () => {
                 <Nav
                     className="fs-6"
                     activeKey="/home"
-                    onSelect={(selectedKey) => alert(`selected ${selectedKey}`)}
                 >
                     <Nav.Item>
                         <Nav.Link href="/home">Active</Nav.Link>
@@ -62,6 +61,9 @@ export const Header = () => {
                         <Nav.Link className="disabled" eventKey="disabled" disabled>
                             Disabled
                         </Nav.Link>
+                    </Nav.Item>
+                    <Nav.Item>
+                        <Nav.Link href="/login" eventKey="login">Login</Nav.Link>
                     </Nav.Item>
                 </Nav>
             </Stack>
