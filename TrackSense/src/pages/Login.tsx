@@ -1,13 +1,21 @@
+import axios from "axios";
 import { useState } from "react"
 import { Button, FloatingLabel } from "react-bootstrap";
 import Form from 'react-bootstrap/Form';
+import { redirect } from "react-router-dom";
 
 function LoginPage() {
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
 
     function handleLogin() {
-
+        axios.post(`http://localhost:3000/register/`, { email, password })
+            .then(() => {
+                redirect('/expenses')
+            })
+            .catch((err) => {
+                alert("Error registering, please try again: " + err)
+            })
     }
 
     return (
@@ -24,7 +32,6 @@ function LoginPage() {
                             className="mb-3 mt-2 text-secondary"
                         >
                             <Form.Control
-                                autoFocus
                                 required
                                 value={email}
                                 type="email"
@@ -55,8 +62,8 @@ function LoginPage() {
                         </div>
                     </Form>
                 </div>
-                <div className="card-footer text-muted">
-                    <button className="btn btn-link text-primary text-decoration-none">Sign Up</button>
+                <div className="card-footer text-muted py-3">
+                    Don't have an account?&nbsp;&nbsp;<a href="/register" className="text-decoration-none">Register</a>
                 </div>
             </div>
         </div >

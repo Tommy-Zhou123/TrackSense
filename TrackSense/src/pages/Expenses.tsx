@@ -18,7 +18,7 @@ import { SortAlphaDown, SortNumericDown, SortDown, SortUp, SortAlphaUp, SortNume
 
 interface Expense {
     _id: number,
-    date: Date, //TODO: CHANGE to DATE type
+    date: Date,
     account: string,
     vendor: string,
     category: string,
@@ -377,7 +377,17 @@ const Expenses = () => {
 
     function updateExpanded(id: number): void {
         let expandedCopy = new Map(expanded);
-        expandedCopy.set(id.toString(), !expanded.get(id.toString()));
+        if (id === 1) {
+            expandedCopy.forEach((value, key) => {
+                expandedCopy.set(key, true);
+            });
+        } else if (id === -1) {
+            expandedCopy.forEach((value, key) => {
+                expandedCopy.set(key, false);
+            });
+        } else {
+            expandedCopy.set(id.toString(), !expanded.get(id.toString()));
+        }
         setExpanded(expandedCopy);
     }
 
@@ -401,8 +411,8 @@ const Expenses = () => {
                 <Row className='align-items-center mt-3 mb-4'>
                     <Col>
                         <Stack direction="horizontal">
-                            <div className="me-3">Group By:</div>
-                            <Dropdown data-bs-theme="light">
+                            <div className="me-2">Group By:</div>
+                            <Dropdown className="me-3" data-bs-theme="light">
                                 <Dropdown.Toggle id="groupBy" variant="outline-dark">
                                     {groupMode[0].toUpperCase() + groupMode.slice(1)}
                                 </Dropdown.Toggle>
@@ -415,6 +425,14 @@ const Expenses = () => {
                                     <Dropdown.Item onClick={() => { sortBy("category"); setGroupMode("category"); populateExpanded(); }}>Category</Dropdown.Item>
                                 </Dropdown.Menu>
                             </Dropdown>
+                            {groupMode !== "none" ?
+                                <>
+                                    <Button className="me-2" variant="outline-dark" onClick={() => { updateExpanded(1) }}>Expand All</Button>
+                                    <Button variant="outline-dark" onClick={() => { updateExpanded(-1) }}>Collapse All</Button>
+                                </>
+                                : ""
+                            }
+
                         </Stack>
                     </Col >
                     <Col className='ms-auto my-auto text-end'>
