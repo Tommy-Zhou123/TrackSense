@@ -13,7 +13,7 @@ import Table from 'react-bootstrap/Table';
 import { FormControlProps, Modal } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 
-import { SortAlphaDown, SortNumericDown, SortDown, SortUp, SortAlphaUp, SortNumericUp, Search } from 'react-bootstrap-icons';
+import { SortAlphaDown, SortNumericDown, SortDown, SortUp, SortAlphaUp, SortNumericUp, Search, ChevronRight, ChevronUp, ChevronDown } from 'react-bootstrap-icons';
 
 
 interface Expense {
@@ -81,6 +81,8 @@ const Expenses = () => {
     const [searchBySelect, setSearchBySelect] = useState<string>('category');
     const [searchByQuery, setSearchByQuery] = useState<string>('');
 
+    const [expanded, setExpanded] = useState<Map<string, boolean>>(new Map());
+
     let prevGroup = "";
     let lightBg = true;
 
@@ -117,6 +119,10 @@ const Expenses = () => {
                 setExpensesCopy(expensesWithDates);
             })
             .catch((err) => {
+                let expensesWithDates = [{ _id: 0, date: new Date(), account: "Account", vendor: "Vendor", amount: 0, category: "Category", notes: "Notes" }];
+                if (sort) expensesWithDates.sort(function (a: Expense, b: Expense) { return a.date.getTime() - b.date.getTime() });
+                setExpenses(expensesWithDates);
+                setExpensesCopy(expensesWithDates);
                 console.log(err);
                 alert("Error retrieving expense data, please refresh.")
             })
@@ -360,6 +366,21 @@ const Expenses = () => {
         }
     }
 
+    function populateExpanded(): void {
+        let uniqueExps: Expense[] = [... new Set(expenses)];
+        let expMap: Map<string, boolean> = new Map();
+        uniqueExps.forEach(exp => {
+            expMap.set(exp._id.toString(), true);
+        });
+        setExpanded(expMap);
+    }
+
+    function updateExpanded(id: number): void {
+        let expandedCopy = new Map(expanded);
+        expandedCopy.set(id.toString(), !expanded.get(id.toString()));
+        setExpanded(expandedCopy);
+    }
+
     return (
         <>
             <Header />
@@ -386,12 +407,12 @@ const Expenses = () => {
                                     {groupMode[0].toUpperCase() + groupMode.slice(1)}
                                 </Dropdown.Toggle>
                                 <Dropdown.Menu>
-                                    <Dropdown.Item onClick={() => { getExpenses(); setGroupMode("none"); }}>None</Dropdown.Item>
-                                    <Dropdown.Item onClick={() => { sortBy("date"); setGroupMode("date"); }}>Date</Dropdown.Item>
-                                    <Dropdown.Item onClick={() => { sortBy("account"); setGroupMode("account"); }}>Account</Dropdown.Item>
-                                    <Dropdown.Item onClick={() => { sortBy("vendor"); setGroupMode("vendor"); }}>Vendor</Dropdown.Item>
-                                    <Dropdown.Item onClick={() => { sortBy("amount"); setGroupMode("amount"); }}>Amount</Dropdown.Item>
-                                    <Dropdown.Item onClick={() => { sortBy("category"); setGroupMode("category"); }}>Category</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => { getExpenses(); setGroupMode("none"); setExpanded(new Map) }}>None</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => { sortBy("date"); setGroupMode("date"); populateExpanded(); }}>Date</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => { sortBy("account"); setGroupMode("account"); populateExpanded(); }}>Account</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => { sortBy("vendor"); setGroupMode("vendor"); populateExpanded(); }}>Vendor</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => { sortBy("amount"); setGroupMode("amount"); populateExpanded(); }}>Amount</Dropdown.Item>
+                                    <Dropdown.Item onClick={() => { sortBy("category"); setGroupMode("category"); populateExpanded(); }}>Category</Dropdown.Item>
                                 </Dropdown.Menu>
                             </Dropdown>
                         </Stack>
@@ -436,12 +457,6 @@ const Expenses = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {/* <tr>
-                                    <td><Form.Check checked={checkedExps.includes("123")} id='123' className='text-center' onChange={handleCheck} /></td                                        return (<tr key={expense._id.toString()} onDoubleClick={() => { setEditId((prevState) => expense._id) }} >                           <td>Amazon</td>
-                                    <td>100.00</td>
-                                    <td>Shopping</td>
-                                    <td>Amazon Purchase</td>
-                                </tr> */}
                                 {
                                     editMode ? (
                                         editableExpenses?.map((expense: Expense, index) => {
@@ -450,9 +465,12 @@ const Expenses = () => {
                                             const generateGroupRow = (label: string) => (
                                                 <React.Fragment key={`group-${label}-${index}`}>
                                                     <tr>
-                                                        <td className={lightBg ? "bg-light" : ""} colSpan={7}>{label}</td>
+                                                        <td onClick={() => { updateExpanded(expense._id) }} className={lightBg ? "bg-light" : ""} colSpan={7}>
+                                                            {label}&nbsp;
+                                                            {expanded.get(expense._id.toString()) ? <ChevronUp /> : <ChevronDown />}
+                                                        </td>
                                                     </tr>
-                                                    {renderRow()}
+                                                    {expanded.get(expense._id.toString()) ? renderRow() : ""}
                                                 </React.Fragment>
                                             );
 
@@ -534,9 +552,12 @@ const Expenses = () => {
                                             const generateGroupRow = (label: string) => (
                                                 <React.Fragment key={`group-${label}-${index}`}>
                                                     <tr>
-                                                        <td className={lightBg ? "bg-light" : ""} colSpan={7}>{label}</td>
+                                                        <td onClick={() => { updateExpanded(expense._id) }} className={lightBg ? "bg-light" : ""} colSpan={7}>
+                                                            {label}&nbsp;
+                                                            {expanded.get(expense._id.toString()) ? <ChevronUp /> : <ChevronDown />}
+                                                        </td>
                                                     </tr>
-                                                    {renderRow()}
+                                                    {expanded.get(expense._id.toString()) ? renderRow() : ""}
                                                 </React.Fragment>
                                             );
 
