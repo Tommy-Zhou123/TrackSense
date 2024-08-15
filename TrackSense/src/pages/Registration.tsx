@@ -2,31 +2,33 @@ import axios from "axios";
 import { useState } from "react"
 import { Button, FloatingLabel, Stack } from "react-bootstrap";
 import Form from 'react-bootstrap/Form';
-import { redirect } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 interface User {
-    firstName: string,
-    lastName: string,
+    userName: string,
     email: string,
-    password?: string
+    password: string
 }
 
 function RegistrationPage() {
-    const [firstName, setFirstName] = useState("")
-    const [lastName, setLastName] = useState("")
+    const [userName, setUserName] = useState("")
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
 
-    function handleRegister() {
-        let user: User = { firstName, lastName, email, password }
-        axios.post(`http://localhost:3000/register/`, user)
+    const navigate = useNavigate();
+
+    function handleRegister(e: React.FormEvent<HTMLFormElement>) {
+        e.preventDefault()
+        let user: User = { userName, email, password }
+        axios.post(`https://track-sense-backend.vercel.app/register`, user)
             .then(() => {
-                redirect('/login')
+                navigate("/expenses");
             })
             .catch((err) => {
                 alert("Error registering, please try again: " + err)
             })
     }
+
 
     return (
         <div className="min-vh-100 d-flex align-items-center justify-content-center">
@@ -36,42 +38,22 @@ function RegistrationPage() {
                 </div>
                 <div className="card-body">
                     <Form onSubmit={handleRegister}>
-                        <Stack className="mb-3 mt-2" direction="horizontal" gap={3}>
-                            <FloatingLabel
-                                controlId="floatingInput"
-                                label="First name"
-                                className="text-secondary"
-                            >
-                                <Form.Control
-                                    autoFocus
-                                    required
-                                    value={firstName}
-                                    type="text"
-                                    aria-label="first name"
-                                    aria-describedby="first name"
-                                    placeholder="First Name"
-                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFirstName(e.target.value)}
-                                />
-                            </FloatingLabel>
-                            <FloatingLabel
-                                controlId="floatingInput"
-                                label="Last name"
-                                className="text-secondary"
-                            >
-                                <Form.Control
-                                    required
-                                    value={lastName}
-                                    type="text"
-                                    aria-label="last name"
-                                    aria-describedby="last name"
-                                    placeholder="Last Name"
-                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLastName(e.target.value)}
-                                />
-                            </FloatingLabel>
-                        </Stack>
+                        <FloatingLabel
+                            label="Username"
+                            className="mb-3 text-secondary"
+                        >
+                            <Form.Control
+                                required
+                                value={userName}
+                                type="text"
+                                aria-label="username"
+                                aria-describedby="username"
+                                placeholder="Username"
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUserName(e.target.value)}
+                            />
+                        </FloatingLabel>
 
                         <FloatingLabel
-                            controlId="floatingInput"
                             label="Email address"
                             className="mb-3 mt-2 text-secondary"
                         >
@@ -86,7 +68,6 @@ function RegistrationPage() {
                             />
                         </FloatingLabel>
                         <FloatingLabel
-                            controlId="floatingInput2"
                             label="Password"
                             className="mb-3 text-secondary"
                         >

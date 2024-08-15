@@ -108,7 +108,7 @@ const Expenses = () => {
     }
 
     function getExpenses(sort: boolean = true) {
-        axios.get('http://localhost:3000/expenses')
+        axios.get('https://track-sense-backend-tommystar123-tommys-projects-f36e5de0.vercel.app/expenses')
             .then((response) => {
                 const expensesWithDates = response.data.expenses.map((expense: any) => ({
                     ...expense,

@@ -9,13 +9,12 @@ router.post("/register", function (req, res) {
 	User.register(
 		new User({
 			email: req.body.email,
-			firstName: req.body.firstName,
-			lastName: req.body.lastName
+			userName: req.body.userName,
 		}),
 		req.body.password,
 		function (err, msg) {
 			if (err) {
-				res.send(err)
+				res.send({ message: err })
 			} else {
 				res.send({ message: "Successful" })
 			}
@@ -35,11 +34,11 @@ router.post(
 )
 
 router.get("/login-failure", (req, res, next) => {
-	res.send("Login Attempt Failed.")
+	res.send({ message: "Failed." })
 })
 
 router.get("/login-success", (req, res, next) => {
-	res.send("Login Attempt was successful.")
+	res.send({ message: "Successful." })
 })
 
 router.get("/user/:id", async (req, res) => {
