@@ -11,7 +11,7 @@ interface User {
 }
 
 function RegistrationPage() {
-    const [username, setusername] = useState("")
+    const [username, setUsername] = useState("")
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
 
@@ -49,7 +49,7 @@ function RegistrationPage() {
                                 aria-label="username"
                                 aria-describedby="username"
                                 placeholder="username"
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setusername(e.target.value)}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUsername(e.target.value)}
                             />
                         </FloatingLabel>
 
