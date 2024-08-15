@@ -5,13 +5,13 @@ import Form from 'react-bootstrap/Form';
 import { useNavigate } from "react-router-dom";
 
 interface User {
-    userName: string,
+    username: string,
     email: string,
     password: string
 }
 
 function RegistrationPage() {
-    const [userName, setUserName] = useState("")
+    const [username, setusername] = useState("")
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
 
@@ -19,7 +19,7 @@ function RegistrationPage() {
 
     function handleRegister(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault()
-        let user: User = { userName, email, password }
+        let user: User = { username, email, password }
         axios.post(`https://track-sense-backend.vercel.app/register`, user)
             .then(() => {
                 navigate("/expenses");
@@ -39,17 +39,17 @@ function RegistrationPage() {
                 <div className="card-body">
                     <Form onSubmit={handleRegister}>
                         <FloatingLabel
-                            label="Username"
+                            label="username"
                             className="mb-3 text-secondary"
                         >
                             <Form.Control
                                 required
-                                value={userName}
+                                value={username}
                                 type="text"
                                 aria-label="username"
                                 aria-describedby="username"
-                                placeholder="Username"
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUserName(e.target.value)}
+                                placeholder="username"
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setusername(e.target.value)}
                             />
                         </FloatingLabel>
 

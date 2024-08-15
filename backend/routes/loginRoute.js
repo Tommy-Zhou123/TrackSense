@@ -9,7 +9,7 @@ router.post("/register", function (req, res) {
 	User.register(
 		new User({
 			email: req.body.email,
-			userName: req.body.userName,
+			username: req.body.username,
 		}),
 		req.body.password,
 		function (err, msg) {
