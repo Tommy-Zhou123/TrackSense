@@ -13,7 +13,7 @@ router.post("/register", function (req, res) {
 		req.body.password,
 		function (err, msg) {
 			if (err) {
-				res.send(err)
+				res.send({ message: err })
 			} else {
 				res.send({ message: "Successfully Registered" })
 			}

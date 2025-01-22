@@ -1,37 +1,34 @@
 import axios from "axios";
-import { useEffect, useState } from "react"
-import { Button, FloatingLabel } from "react-bootstrap";
+import { useState } from "react"
+import { Button, FloatingLabel, Stack } from "react-bootstrap";
 import Form from 'react-bootstrap/Form';
+import { useNavigate } from "react-router-dom";
 
+interface User {
+    username: string,
+    email: string,
+    password: string
+}
 
-const API_URL: string = import.meta.env.VITE_API_URL as string
-
-
-const LoginPage = () => {
-
+function RegistrationPage() {
+    const [username, setUsername] = useState("")
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
-    const [error, setError] = useState("")
 
-    function handleLogin(e: React.FormEvent<HTMLFormElement>) {
+    const navigate = useNavigate();
+
+    function handleRegister(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault()
-        if (email != null && password != null) {
-            const data = {
-                email, password
-            }
-            axios.post(`${API_URL}/api/login`, data)
-                .then((res) => {
-                    if (res.status === 200) {
-                        window.location.href = "/expenses";
-                    }
-                })
-                .catch((e) => {
-                    setError("Invalid Email or Password")
-                })
-        } else {
-            alert("Please fill out all required fields")
-        }
+        let user: User = { username, email, password }
+        axios.post(`https://track-sense-backend.vercel.app/register`, user)
+            .then(() => {
+                navigate("/expenses");
+            })
+            .catch((err) => {
+                alert("Error registering, please try again: " + err)
+            })
     }
+
 
     return (
         <div className="min-vh-100 d-flex align-items-center justify-content-center">
@@ -40,7 +37,22 @@ const LoginPage = () => {
                     <h4 className="card-title mt-3 pb-1 text-center">TrackSense</h4>
                 </div>
                 <div className="card-body">
-                    <Form onSubmit={handleLogin}>
+                    <Form onSubmit={handleRegister}>
+                        <FloatingLabel
+                            label="username"
+                            className="mb-3 text-secondary"
+                        >
+                            <Form.Control
+                                required
+                                value={username}
+                                type="text"
+                                aria-label="username"
+                                aria-describedby="username"
+                                placeholder="username"
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUsername(e.target.value)}
+                            />
+                        </FloatingLabel>
+
                         <FloatingLabel
                             label="Email address"
                             className="mb-3 mt-2 text-secondary"
@@ -57,11 +69,11 @@ const LoginPage = () => {
                         </FloatingLabel>
                         <FloatingLabel
                             label="Password"
-                            className="mb-2 text-secondary"
+                            className="mb-3 text-secondary"
                         >
                             <Form.Control
                                 required
-                                className="mb-1"
+                                className="mb-3"
                                 value={password}
                                 type="password"
                                 aria-label="password"
@@ -70,20 +82,17 @@ const LoginPage = () => {
                                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
                             />
                         </FloatingLabel>
-
-                        <p className="text-danger ms-1">{error}</p>
-
                         <div className="text-end">
-                            <Button type="submit" className="btn btn-primary mb-1">Login</Button>
+                            <Button type="submit" className="btn btn-success mb-1">Register</Button>
                         </div>
                     </Form>
                 </div>
                 <div className="card-footer text-muted py-3">
-                    Don't have an account?&nbsp;&nbsp;<a href="/register" className="text-decoration-none">Register</a>
+                    Already have an account?&nbsp;&nbsp;<a href="/login" className="text-decoration-none">Login</a>
                 </div>
-            </div >
+            </div>
         </div >
     )
 }
 
-export default LoginPage
+export default RegistrationPage
