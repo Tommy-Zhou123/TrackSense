@@ -8,6 +8,7 @@ const expenseSchema = new Schema({
 	category: String,
 	amount: Number,
 	notes: String,
+	user: Schema.Types.ObjectId,
 })
 
 export const Expense = mongoose.model("Expense", expenseSchema)

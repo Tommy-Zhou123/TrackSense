@@ -15,6 +15,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { SortAlphaDown, SortNumericDown, SortDown, SortUp, SortAlphaUp, SortNumericUp, Search } from 'react-bootstrap-icons';
 
+const API_URL: string = import.meta.env.VITE_API_URL
 
 interface Expense {
     _id: number,
@@ -34,9 +35,6 @@ let groupCounter: number = 1;
 
 let expenseParts: ExpensePart[] = ["none", "date", "account", "vendor", "amount", "category", "notes"];
 
-const generateGroupID = () => {
-    return `${groupCounter++}`;
-}
 
 const formatDate = (date: Date) => {
     return date.toISOString().split('T')[0];
@@ -106,7 +104,7 @@ const Expenses = () => {
     }
 
     function getExpenses(sort: boolean = true) {
-        axios.get('http://localhost:3000/expenses')
+        axios.get(`${API_URL}/api/expenses`)
             .then((response) => {
                 const expensesWithDates = response.data.expenses.map((expense: any) => ({
                     ...expense,
@@ -128,7 +126,7 @@ const Expenses = () => {
             const data = {
                 date, account, vendor, amount, category, notes
             }
-            axios.post('http://localhost:3000/expenses/add', data)
+            axios.post(`${API_URL}/api/expenses/add`, data)
                 .then((res) => {
                     let updatedExpenses: Expense[] = [...expenses, { _id: res.data._id, ...data }];
                     setExpenses(updatedExpenses);
@@ -152,7 +150,7 @@ const Expenses = () => {
         let updatedExpenses: Expense[] = [...expenses];
         let updatedExpensesCopy: Expense[] = [...expensesCopy];
         editableExpenses.forEach(expense => {
-            axios.put(`http://localhost:3000/expenses/${expense._id}`, expense)
+            axios.put(`${API_URL}/api/expenses/${expense._id}`, expense)
                 .then(() => {
                     updatedExpenses.forEach((exp, index) => {
                         if (exp._id === expense._id) {
@@ -176,7 +174,7 @@ const Expenses = () => {
 
     function DeleteExpenses() {
         checkedExps.forEach(expense => {
-            axios.delete(`http://localhost:3000/expenses/${expense} `)
+            axios.delete(`${API_URL}/api/expenses/${expense}`)
                 .then((res) => {
                     let updatedExpenses: Expense[] = [...expenses];
                     updatedExpenses = updatedExpenses.filter((exp: Expense) => exp._id != res.data._id);

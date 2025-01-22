@@ -8,15 +8,7 @@ import LoginPage from './pages/Login.tsx'
 // import EditExpense from './pages/EditExpense'
 // import DeleteExpense from './pages/DeleteExpense'
 
-let url: String = 'http://localhost:3000/'
 
-interface Expense {
-  _id: string
-  date: string
-  vendor: string
-  amount: number
-  notes: string
-}
 
 function App() {
   return (

@@ -1,13 +1,36 @@
-import { useState } from "react"
+import axios from "axios";
+import { useEffect, useState } from "react"
 import { Button, FloatingLabel } from "react-bootstrap";
 import Form from 'react-bootstrap/Form';
 
-function LoginPage() {
+
+const API_URL: string = import.meta.env.VITE_API_URL as string
+
+
+const LoginPage = () => {
+
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
+    const [error, setError] = useState("")
 
-    function handleLogin() {
-
+    function handleLogin(e: React.FormEvent<HTMLFormElement>) {
+        e.preventDefault()
+        if (email != null && password != null) {
+            const data = {
+                email, password
+            }
+            axios.post(`${API_URL}/api/login`, data)
+                .then((res) => {
+                    if (res.status === 200) {
+                        window.location.href = "/expenses";
+                    }
+                })
+                .catch((e) => {
+                    setError("Invalid Email or Password")
+                })
+        } else {
+            alert("Please fill out all required fields")
+        }
     }
 
     return (
@@ -43,13 +66,16 @@ function LoginPage() {
                                 required
                                 className="mb-3"
                                 value={password}
-                                type="text"
+                                type="password"
                                 aria-label="password"
                                 aria-describedby="password"
                                 placeholder="Password"
                                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
                             />
                         </FloatingLabel>
+
+                        <p className="text-danger ms-1">{error}</p>
+
                         <div className="text-end">
                             <Button type="submit" className="btn btn-primary mb-1">Login</Button>
                         </div>

@@ -5,7 +5,7 @@ import { isLoggedIn } from "../middleware.js"
 const router = express.Router()
 
 //Create a new expense
-router.post("/add", async (req, res) => {
+router.post("/add", isLoggedIn, async (req, res) => {
 	try {
 		if (
 			req.body.date &&
@@ -21,6 +21,7 @@ router.post("/add", async (req, res) => {
 				amount: req.body.amount,
 				category: req.body.category,
 				notes: req.body.notes,
+				user: req.user._id,
 			}
 			const expense = await Expense.create(newExpense)
 
@@ -30,14 +31,14 @@ router.post("/add", async (req, res) => {
 		}
 	} catch (err) {
 		console.log(err.message)
-		res.status(500).send({ message: err.Expense })
+		res.status(500).send({ message: err.Expense, user: req.user._id })
 	}
 })
 
 //Get all expenses
 router.get("/", isLoggedIn, async (req, res) => {
 	try {
-		const expenses = await Expense.find({})
+		const expenses = await Expense.find({ user: req.user._id })
 		return res.status(200).json({
 			count: expenses.length,
 			expenses: expenses,
@@ -64,7 +65,7 @@ router.get("/:id", isLoggedIn, async (req, res) => {
 })
 
 //Update an expense with ID
-router.put("/:id", async (req, res) => {
+router.put("/:id", isLoggedIn, async (req, res) => {
 	try {
 		if (
 			!req.body.date ||
@@ -88,7 +89,7 @@ router.put("/:id", async (req, res) => {
 })
 
 //Delete an expense with ID
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", isLoggedIn, async (req, res) => {
 	try {
 		const { id } = req.params
 		const result = await Expense.findByIdAndDelete(id)

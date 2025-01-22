@@ -9,36 +9,28 @@ router.post("/register", function (req, res) {
 	User.register(
 		new User({
 			email: req.body.email,
-			username: req.body.username,
 		}),
 		req.body.password,
 		function (err, msg) {
 			if (err) {
 				res.send(err)
 			} else {
-				res.send({ message: "Successful" })
+				res.send({ message: "Successfully Registered" })
 			}
 		}
 	)
 })
 
-router.post(
-	"/login",
-	passport.authenticate("local", {
-		failureRedirect: "/login-failure",
-		successRedirect: "/login-success",
-	}),
-	(err, req, res, next) => {
-		if (err) next(err)
-	}
-)
+router.post("/login", passport.authenticate("local"), (err, req, res, next) => {
+	if (err) next("Login Failed")
+})
 
 router.get("/login-failure", (req, res, next) => {
-	res.send("Login Attempt Failed.")
+	res.status(404).statusMessage("Login Attempt Failed.")
 })
 
 router.get("/login-success", (req, res, next) => {
-	res.send("Login Attempt was successful.")
+	res.status(200).send("Login Attempt was successful.")
 })
 
 router.get("/user/:id", async (req, res) => {
@@ -53,6 +45,27 @@ router.get("/user/:id", async (req, res) => {
 		console.log(err.message)
 		res.status(500).send({ message: err.message })
 	}
+})
+
+router.post(
+	"/login",
+	passport.authenticate("local", {
+		keepSessionInfo: true,
+		failureRedirect: "/login-failure",
+		successRedirect: "/login-success",
+	}),
+	(err, req, res, next) => {
+		if (err) next(err)
+	}
+)
+
+router.post("/logout", function (req, res, next) {
+	req.logout(function (err) {
+		if (err) {
+			return next(err)
+		}
+		return res.status(200).send({ message: "Logged out" })
+	})
 })
 
 export default router

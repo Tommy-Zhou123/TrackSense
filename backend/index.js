@@ -12,7 +12,6 @@ import session from "express-session"
 import LocalStrategy from "passport-local"
 
 import { User } from "./models/user.js"
-import { Expense } from "./models/expense.js"
 
 const app = express()
 
@@ -25,8 +24,14 @@ app.use(
 	})
 )
 
-const strategy = new LocalStrategy(User.authenticate())
-passport.use(strategy)
+passport.use(
+	new LocalStrategy(
+		{
+			usernameField: "email",
+		},
+		User.authenticate()
+	)
+)
 passport.serializeUser(User.serializeUser())
 passport.deserializeUser(User.deserializeUser())
 
