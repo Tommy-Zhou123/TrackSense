@@ -1,5 +1,5 @@
 import axios from "axios";
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button, Col, FloatingLabel, Row } from "react-bootstrap";
 import Form from 'react-bootstrap/Form';
 import { useNavigate } from "react-router-dom";
@@ -13,7 +13,7 @@ interface User {
 
 const API_URL: string = import.meta.env.VITE_API_URL as string
 
-function RegistrationPage() {
+function Register() {
     const [firstName, setFirstName] = useState("")
     const [lastName, setLastName] = useState("")
     const [email, setEmail] = useState("")
@@ -22,13 +22,23 @@ function RegistrationPage() {
 
     const navigate = useNavigate();
 
+    useEffect(() => {
+        axios.get(`${API_URL}/api/user`)
+            .then((res) => {
+                if (res.status === 200) {
+                    navigate("/expenses");
+                }
+            })
+            .catch()
+    }, [navigate]);
+
     function handleRegister(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault()
         let user: User = { firstName, lastName, email, password }
         axios.post(`${API_URL}/api/register`, user)
             .then((res) => {
                 if (res.data.message === "Successfully Registered") {
-                    navigate("/login", { state: { newUser: true } });
+                    navigate("/expenses", { state: { newUser: true } });
                 } else {
                     setError("*" + res.data.message.message);
                 }
@@ -125,4 +135,4 @@ function RegistrationPage() {
     )
 }
 
-export default RegistrationPage
+export default Register

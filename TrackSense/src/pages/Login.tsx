@@ -2,21 +2,29 @@ import axios from "axios";
 import { useEffect, useState } from "react"
 import { Button, FloatingLabel } from "react-bootstrap";
 import Form from 'react-bootstrap/Form';
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 
 const API_URL: string = import.meta.env.VITE_API_URL as string
 
 
 const LoginPage = () => {
-    const { state } = useLocation();
-    const newUser = state?.newUser;
 
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
     const [error, setError] = useState("")
 
     const navigate = useNavigate();
+
+    useEffect(() => {
+        axios.get(`${API_URL}/api/user`)
+            .then((res) => {
+                if (res.status === 200) {
+                    navigate("/expenses");
+                }
+            })
+            .catch()
+    }, [navigate]);
 
     function handleLogin(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault()
@@ -27,11 +35,7 @@ const LoginPage = () => {
             axios.post(`${API_URL}/api/login`, data)
                 .then((res) => {
                     if (res.status === 200) {
-                        if (newUser) {
-                            navigate("/expenses", { state: { newUser: true } });
-                        } else {
-                            navigate("/expenses");
-                        }
+                        navigate("/expenses");
                     }
                 })
                 .catch(() => {

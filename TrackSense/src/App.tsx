@@ -5,7 +5,7 @@ import { Routes, Route } from 'react-router-dom'
 // import ShowExpense from './pages/ShowExpense'
 import Expenses from './pages/Expenses.tsx'
 import LoginPage from './pages/Login.tsx'
-import RegistrationPage from './pages/Registration.tsx'
+import RegistrationPage from './pages/Register.tsx'
 // import EditExpense from './pages/EditExpense'
 // import DeleteExpense from './pages/DeleteExpense'
 

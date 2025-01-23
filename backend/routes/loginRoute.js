@@ -6,25 +6,27 @@ import { Expense } from "../models/expense.js"
 const router = express.Router()
 
 router.post("/register", function (req, res) {
-	User.register(
-		new User({
-			firstName: req.body.firstName,
-			lastName: req.body.lastName,
-			email: req.body.email,
-		}),
-		req.body.password,
-		function (err, msg) {
-			if (err) {
-				res.send({ message: err })
-			} else {
-				res.send({ message: "Successfully Registered" })
-			}
+	let user = new User({
+		firstName: req.body.firstName,
+		lastName: req.body.lastName,
+		email: req.body.email,
+	})
+	User.register(user, req.body.password, function (err, msg) {
+		if (err) {
+			res.send({ message: err })
+		} else {
+			req.login(user, function (err) {
+				if (err) {
+					return res.send({ message: err })
+				}
+				return res.send({ message: "Successfully Registered" })
+			})
 		}
-	)
+	})
 })
 
 router.post("/login", passport.authenticate("local"), (err, req, res, next) => {
-	if (err) next("Login Failed")
+	if (err) next("Login Failed") //TODO: change to not trigger error
 })
 
 router.get("/login-failure", (req, res, next) => {

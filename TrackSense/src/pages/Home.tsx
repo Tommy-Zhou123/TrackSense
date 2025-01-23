@@ -59,7 +59,6 @@ export const Header = () => {
             .then((res) => {
                 if (res.status === 200) {
                     setUserInfo(res.data);
-                    console.log(userInfo);
                 }
             })
             .catch((e) => {

@@ -81,6 +81,8 @@ const Expenses = () => {
 
     const [expanded, setExpanded] = useState<Map<string, boolean>>(new Map());
 
+    const navigate = useNavigate();
+
     let prevGroup = "";
     let lightBg = true;
 
@@ -121,8 +123,11 @@ const Expenses = () => {
                 if (sort) expensesWithDates.sort(function (a: Expense, b: Expense) { return a.date.getTime() - b.date.getTime() });
                 setExpenses(expensesWithDates);
                 setExpensesCopy(expensesWithDates);
-                console.log(err);
-                alert("Error retrieving expense data, please refresh.")
+                if (err?.response?.data?.message === "Not Logged In") {
+                    navigate("/login");
+                } else {
+                    alert("Error retrieving expense data, please try again later.")
+                }
             })
     }
 
@@ -144,7 +149,7 @@ const Expenses = () => {
                     clearFormValues()
                 })
                 .catch((err) => {
-                    console.log(err);
+                    console.error(err);
                     alert("Error adding expense, please try again.")
                 })
         } else {
@@ -185,14 +190,14 @@ const Expenses = () => {
                     let updatedExpenses: Expense[] = [...expenses];
                     updatedExpenses = updatedExpenses.filter((exp: Expense) => exp._id != res.data._id);
                     setExpenses(updatedExpenses);
-                    console.log(updatedExpenses);
+                    // console.log(updatedExpenses);
 
                     let updatedExpensesCopy: Expense[] = [...expensesCopy];
                     updatedExpensesCopy = updatedExpensesCopy.filter((exp: Expense) => exp._id != res.data._id);
                     setExpensesCopy(updatedExpensesCopy);
                 })
                 .catch((err) => {
-                    console.log(err);
+                    console.error(err);
                     alert("Error deleting expense(s), please try again.")
                 })
         });
@@ -409,7 +414,7 @@ const Expenses = () => {
                 <Row className='align-items-center mt-3 mb-4'>
                     <Col>
                         <Stack direction="horizontal">
-                            <div className="me-2">Group By:</div>
+                            <div className="me-2 fs-">Group By:</div>
                             <Dropdown className="me-3" data-bs-theme="light">
                                 <Dropdown.Toggle id="groupBy" variant="outline-dark">
                                     {groupMode[0].toUpperCase() + groupMode.slice(1)}
@@ -483,7 +488,7 @@ const Expenses = () => {
                                                     <tr>
                                                         <td onClick={() => { updateExpanded(expense._id) }} className={lightBg ? "bg-light" : ""} colSpan={7}>
                                                             {label}&nbsp;
-                                                            {expanded.get(expense._id.toString()) ? <ChevronUp /> : <ChevronDown />}
+                                                            {expanded.get(expense._id.toString()) ? <ChevronUp /> : <ChevronRight />}
                                                         </td>
                                                     </tr>
                                                     {expanded.get(expense._id.toString()) ? renderRow() : ""}
@@ -570,7 +575,7 @@ const Expenses = () => {
                                                     <tr>
                                                         <td onClick={() => { updateExpanded(expense._id) }} className={lightBg ? "bg-light" : ""} colSpan={7}>
                                                             {label}&nbsp;
-                                                            {expanded.get(expense._id.toString()) ? <ChevronUp /> : <ChevronDown />}
+                                                            {expanded.get(expense._id.toString()) ? <ChevronUp /> : <ChevronRight />}
                                                         </td>
                                                     </tr>
                                                     {expanded.get(expense._id.toString()) ? renderRow() : ""}
