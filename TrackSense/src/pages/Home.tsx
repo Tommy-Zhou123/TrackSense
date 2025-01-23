@@ -111,8 +111,8 @@ export const Header = () => {
             </Stack>
             <Stack className="bg-slate flex flex-col py-5 ps-5 gap={1}">
                 <div className='fs-xl pb-1'>{newUser ? "Welcome to TrackSense!" : "Welcome Back!"}</div>
-                {userInfo !== null ? (<div className='fs-5 pb-4 ms-1'>Hello, {userInfo?.firstName} {userInfo.lastName}</div>) : null}
-                <div className="flex flex-row gap-x-3">
+                {userInfo && userInfo.firstName && userInfo.lastName !== null ? (<div className='fs-5 ms-1'>Hello, {userInfo.firstName} {userInfo.lastName}</div>) : null}
+                <div className="flex flex-row gap-x-3 pt-4">
                     <DropDowns />
                 </div>
             </Stack>
