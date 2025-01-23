@@ -8,6 +8,8 @@ const router = express.Router()
 router.post("/register", function (req, res) {
 	User.register(
 		new User({
+			firstName: req.body.firstName,
+			lastName: req.body.lastName,
 			email: req.body.email,
 		}),
 		req.body.password,

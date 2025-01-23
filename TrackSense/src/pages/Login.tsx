@@ -2,6 +2,7 @@ import axios from "axios";
 import { useEffect, useState } from "react"
 import { Button, FloatingLabel } from "react-bootstrap";
 import Form from 'react-bootstrap/Form';
+import { useNavigate } from "react-router-dom";
 
 
 const API_URL: string = import.meta.env.VITE_API_URL as string
@@ -13,6 +14,8 @@ const LoginPage = () => {
     const [password, setPassword] = useState("")
     const [error, setError] = useState("")
 
+    const navigate = useNavigate();
+
     function handleLogin(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault()
         if (email != null && password != null) {
@@ -22,11 +25,11 @@ const LoginPage = () => {
             axios.post(`${API_URL}/api/login`, data)
                 .then((res) => {
                     if (res.status === 200) {
-                        window.location.href = "/expenses";
+                        navigate("/expenses");
                     }
                 })
-                .catch((e) => {
-                    setError("Invalid Email or Password")
+                .catch(() => {
+                    setError("*Invalid Email or Password")
                 })
         } else {
             alert("Please fill out all required fields")
@@ -37,7 +40,7 @@ const LoginPage = () => {
         <div className="min-vh-100 d-flex align-items-center justify-content-center">
             <div className="card" style={{ width: "25rem" }}>
                 <div className="card-header">
-                    <h4 className="card-title mt-3 pb-1 text-center">TrackSense</h4>
+                    <h3 className="card-title mt-3 pb-1 text-center">TrackSense</h3>
                 </div>
                 <div className="card-body">
                     <Form onSubmit={handleLogin}>

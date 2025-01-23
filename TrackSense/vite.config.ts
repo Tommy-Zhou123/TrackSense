@@ -9,32 +9,57 @@ export default defineConfig({
   server: {
     proxy: { //proxy for session auth with passport to work
       '/api/login': {
-        target: `${API_URL}/login`,
+        target: `${API_URL}`,
         changeOrigin: true,
         secure: false,
         ws: true,
-        rewrite: (path) => path.replace(/^\/api\/login/, ''),
+        rewrite: (path) => path.replace(/^\/api/, ''),
+        // configure: (proxy, _options) => {
+        //   proxy.on('error', (err, _req, _res) => {
+        //     console.log('proxy error', err);
+        //   });
+        //   proxy.on('proxyReq', (proxyReq, req, _res) => {
+        //     console.log('Sending Request to the Target:', req.method, req.url);
+        //   });
+        //   proxy.on('proxyRes', (proxyRes, req, _res) => {
+        //     console.log('Received Response from the Target:', proxyRes.statusCode, req.url);
+        //   });
+        // },
       },
       '/api/expenses': {
-        target: `${API_URL}/expenses`,
+        target: `${API_URL}`,
         changeOrigin: true,
         secure: false,
         ws: true,
-        rewrite: (path) => path.replace(/^\/api\/expenses/, ''),
+        rewrite: (path) => path.replace(/^\/api/, ''),
       },
       '/api/expenses/add': {
-        target: `${API_URL}/expenses/add`,
+        target: `${API_URL}`,
         changeOrigin: true,
         secure: false,
         ws: true,
-        rewrite: (path) => path.replace(/^\/api\/expenses\/add/, ''),
+        rewrite: (path) => path.replace(/^\/api/, ''),
       },
       '/api/expenses/.*': {
-        target: `${API_URL}/expenses`,
+        target: `${API_URL}`,
         changeOrigin: true,
         secure: false,
         ws: true,
-        rewrite: (path) => path.replace(/^\/api\/expenses/, ''),
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+      '/api/register': {
+        target: `${API_URL}`,
+        changeOrigin: true,
+        secure: false,
+        ws: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+      '/api/logout': {
+        target: `${API_URL}`,
+        changeOrigin: true,
+        secure: false,
+        ws: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
       }
     }
   }

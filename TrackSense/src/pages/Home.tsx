@@ -1,6 +1,12 @@
 import Stack from 'react-bootstrap/Stack';
 import Nav from 'react-bootstrap/Nav';
 import Dropdown from 'react-bootstrap/Dropdown';
+import axios from 'axios';
+import { useNavigate } from "react-router-dom";
+import { Button } from 'react-bootstrap';
+
+
+const API_URL: string = import.meta.env.VITE_API_URL as string
 
 
 function DropDowns() {
@@ -40,6 +46,20 @@ function DropDowns() {
 }
 
 export const Header = () => {
+    const navigate = useNavigate();
+
+    function handleLogout() {
+        axios.post(`${API_URL}/api/logout`)
+            .then((res) => {
+                if (res.status === 200) {
+                    navigate("/login");
+                }
+            })
+            .catch((e) => {
+                console.error(e);
+                navigate("/login");
+            })
+    }
     return (
         <>
             <Stack className='ps-5 py-3 bg-black text-white' direction="horizontal" gap={4}>
@@ -66,6 +86,12 @@ export const Header = () => {
                         <Nav.Link href="/login" eventKey="login">Login</Nav.Link>
                     </Nav.Item>
                 </Nav>
+                <Nav className="fs-6 ms-auto me-4">
+                    <Nav.Link onClick={handleLogout} eventKey="Logout">
+                        Logout
+                    </Nav.Link>
+                </Nav>
+
             </Stack>
             <Stack className="bg-slate flex flex-col py-5 ps-5 gap={1}">
                 <div className='fs-xl pb-1'>Welcome Back!</div>
