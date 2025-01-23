@@ -2,8 +2,9 @@ import Stack from 'react-bootstrap/Stack';
 import Nav from 'react-bootstrap/Nav';
 import Dropdown from 'react-bootstrap/Dropdown';
 import axios from 'axios';
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from 'react-bootstrap';
+import { useEffect, useState } from 'react';
 
 
 const API_URL: string = import.meta.env.VITE_API_URL as string
@@ -45,8 +46,27 @@ function DropDowns() {
     )
 }
 
+
 export const Header = () => {
     const navigate = useNavigate();
+    const { state } = useLocation();
+    const newUser = state?.newUser;
+
+    const [userInfo, setUserInfo] = useState({ id: "", firstName: "", lastName: "", email: "" })
+
+    useEffect(() => {
+        axios.get(`${API_URL}/api/user`)
+            .then((res) => {
+                if (res.status === 200) {
+                    setUserInfo(res.data);
+                    console.log(userInfo);
+                }
+            })
+            .catch((e) => {
+                console.error(e);
+                navigate("/login");
+            })
+    }, [])
 
     function handleLogout() {
         axios.post(`${API_URL}/api/logout`)
@@ -64,14 +84,11 @@ export const Header = () => {
         <>
             <Stack className='ps-5 py-3 bg-black text-white' direction="horizontal" gap={4}>
                 <div className='fs-2'>TrackSense</div>
-                <Nav
-                    className="fs-6"
-                    activeKey="/home"
-                >
+                <Nav className="fs-6 mt-2" activeKey="/home">
                     <Nav.Item>
-                        <Nav.Link href="/home">Active</Nav.Link>
+                        <Nav.Link href="/home">Expenses</Nav.Link>
                     </Nav.Item>
-                    <Nav.Item>
+                    {/* <Nav.Item>
                         <Nav.Link eventKey="link-1">Expenses</Nav.Link>
                     </Nav.Item>
                     <Nav.Item>
@@ -84,18 +101,18 @@ export const Header = () => {
                     </Nav.Item>
                     <Nav.Item>
                         <Nav.Link href="/login" eventKey="login">Login</Nav.Link>
-                    </Nav.Item>
+                    </Nav.Item> */}
                 </Nav>
-                <Nav className="fs-6 ms-auto me-4">
-                    <Nav.Link onClick={handleLogout} eventKey="Logout">
+                <Nav className="fs-6 ms-auto me-4 mt-1">
+                    <Nav.Link onClick={handleLogout}>
                         Logout
                     </Nav.Link>
                 </Nav>
 
             </Stack>
             <Stack className="bg-slate flex flex-col py-5 ps-5 gap={1}">
-                <div className='fs-xl pb-1'>Welcome Back!</div>
-                <div className='fs-5 pb-4 ms-1'>Hello, Tommy Zhou</div>
+                <div className='fs-xl pb-1'>{newUser ? "Welcome to TrackSense!" : "Welcome Back!"}</div>
+                {userInfo !== null ? (<div className='fs-5 pb-4 ms-1'>Hello, {userInfo?.firstName} {userInfo.lastName}</div>) : null}
                 <div className="flex flex-row gap-x-3">
                     <DropDowns />
                 </div>
@@ -105,11 +122,7 @@ export const Header = () => {
 }
 
 const Home = () => {
-    return (
-        <>
-            <Header />
-        </>
-    )
+    return <Header />
 }
 
 export default Home

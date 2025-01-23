@@ -28,7 +28,7 @@ function RegistrationPage() {
         axios.post(`${API_URL}/api/register`, user)
             .then((res) => {
                 if (res.data.message === "Successfully Registered") {
-                    navigate("/expenses");
+                    navigate("/login", { state: { newUser: true } });
                 } else {
                     setError("*" + res.data.message.message);
                 }

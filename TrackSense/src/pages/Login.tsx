@@ -2,13 +2,15 @@ import axios from "axios";
 import { useEffect, useState } from "react"
 import { Button, FloatingLabel } from "react-bootstrap";
 import Form from 'react-bootstrap/Form';
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 
 const API_URL: string = import.meta.env.VITE_API_URL as string
 
 
 const LoginPage = () => {
+    const { state } = useLocation();
+    const newUser = state?.newUser;
 
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
@@ -25,7 +27,11 @@ const LoginPage = () => {
             axios.post(`${API_URL}/api/login`, data)
                 .then((res) => {
                     if (res.status === 200) {
-                        navigate("/expenses");
+                        if (newUser) {
+                            navigate("/expenses", { state: { newUser: true } });
+                        } else {
+                            navigate("/expenses");
+                        }
                     }
                 })
                 .catch(() => {

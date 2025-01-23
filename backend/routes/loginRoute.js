@@ -35,10 +35,9 @@ router.get("/login-success", (req, res, next) => {
 	res.status(200).send("Login Attempt was successful.")
 })
 
-router.get("/user/:id", async (req, res) => {
+router.get("/user", async (req, res) => {
 	try {
-		const { id } = req.params
-		const user = await Expense.findById(id)
+		let user = req?.user
 		if (!user) {
 			return res.status(404).send({ message: "User not found" })
 		}
