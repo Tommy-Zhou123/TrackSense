@@ -51,11 +51,21 @@
     color: white;
 }
 
-.nav-link.active{
+.nav-link.active {
     color: rgb(181, 226, 249);
 }
 
 .nav-link:focus,
 .nav-link:hover {
     color: rgb(218, 222, 225);
+}
+
+.page-link {
+    color: #000000;
+}
+
+.active>.page-link {
+    color: rgb(0, 0, 0);
+    background-color: #dbffff;
+    border-color: #dee2e6;
 }

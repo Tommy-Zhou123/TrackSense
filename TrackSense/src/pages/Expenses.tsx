@@ -10,8 +10,11 @@ import Button from 'react-bootstrap/Button';
 import Form from 'react-bootstrap/Form';
 import InputGroup from 'react-bootstrap/InputGroup';
 import Table from 'react-bootstrap/Table';
+import Pagination from 'react-bootstrap/Pagination';
+
 import { FormControlProps, Modal } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
+
 
 import { SortAlphaDown, SortNumericDown, SortDown, SortUp, SortAlphaUp, SortNumericUp, Search, ChevronRight, ChevronUp, ChevronDown } from 'react-bootstrap-icons';
 
@@ -68,6 +71,9 @@ const Expenses = () => {
     const [category, setCategory] = useState('');
     const [notes, setNotes] = useState('');
 
+    const [currentPage, setCurrentPage] = useState(1);
+    const [perPage, setPerPage] = useState(50);
+
     const [sortDate, setSortDate] = useState<'down' | 'up'>('down');
     const [sortAccount, setSortAccount] = useState<'down' | 'up'>('down');
     const [sortVendor, setSortVendor] = useState<'down' | 'up'>('down');
@@ -107,15 +113,19 @@ const Expenses = () => {
         setCatSelect('');
     }
 
-    function getExpenses(sort: boolean = true) {
+    function getExpenses(sort: boolean = true, page: number = -1) {
         axios.get(`${API_URL}/api/expenses`)
             .then((response) => {
                 const expensesWithDates = response.data.expenses.map((expense: any) => ({
                     ...expense,
                     date: new Date(expense.date)
                 }));
-                if (sort) expensesWithDates.sort(function (a: Expense, b: Expense) { return a.date.getTime() - b.date.getTime() });
-                setExpenses(expensesWithDates);
+                if (sort) expensesWithDates.sort(function (a: Expense, b: Expense) { return b.date.getTime() - a.date.getTime() });
+                console.log(expensesWithDates);
+                if (page === -1) page = currentPage;
+                setExpenses(expensesWithDates.slice((page - 1) * perPage, (page) * perPage));
+                console.log(expensesWithDates.slice((page - 1) * perPage, (page) * perPage));
+                console.log((page - 1) * perPage, (page) * perPage);
                 setExpensesCopy(expensesWithDates);
             })
             .catch((err) => {
@@ -611,6 +621,13 @@ const Expenses = () => {
                         </Table>
                     </Form>
                 </Row>
+
+                <ExpensePagination
+                    currentPage={currentPage}
+                    perPage={perPage}
+                    setCurrentPage={setCurrentPage}
+                    totalExpenses={expensesCopy.length}
+                    getExpenses={getExpenses} />
             </Container >
 
             {/* Add Expense Form */}
@@ -714,8 +731,21 @@ const Expenses = () => {
 }
 
 
+interface EditableExpenseRowProps {
+    expense: Expense,
+    checkedExps: string[],
+    handleCheck: (e: React.ChangeEvent<HTMLInputElement>) => void,
+    editDate: (expense: Expense, d: string) => void,
+    editAccount: (expense: Expense, a: string) => void,
+    editVendor: (expense: Expense, v: string) => void,
+    editAmount: (expense: Expense, a: number) => void,
+    editCategory: (expense: Expense, c: string) => void,
+    editNotes: (expense: Expense, n: string) => void,
+    bg: boolean
+}
+
 // editable expense table row component
-function ExpenseEditableRow({ expense, checkedExps, handleCheck, editDate, editAccount, editVendor, editAmount, editCategory, editNotes, bg }: any) {
+function ExpenseEditableRow({ expense, checkedExps, handleCheck, editDate, editAccount, editVendor, editAmount, editCategory, editNotes, bg }: EditableExpenseRowProps) {
     let bgClr = bg ? "bg-light" : "";
     return (<tr key={expense._id.toString()}>
         <td className={bgClr}><Form.Check checked={checkedExps.includes(expense._id.toString())} id={expense._id.toString()} className='text-center' onChange={handleCheck} /></td>
@@ -728,7 +758,15 @@ function ExpenseEditableRow({ expense, checkedExps, handleCheck, editDate, editA
     </tr>)
 }
 
-function ExpenseRow({ expense, checkedExps, handleCheck, handleDbClickEdit, bg }: any) {
+interface ExpenseRowProps {
+    expense: Expense,
+    checkedExps: string[],
+    handleCheck: (e: React.ChangeEvent<HTMLInputElement>) => void,
+    handleDbClickEdit: (id: number) => void,
+    bg: boolean
+}
+
+function ExpenseRow({ expense, checkedExps, handleCheck, handleDbClickEdit, bg }: ExpenseRowProps) {
     let bgClr = bg ? "bg-light" : "";
     return (<tr key={expense._id.toString()} onDoubleClick={() => { handleDbClickEdit(expense._id) }} >
         <td className={bgClr}><Form.Check checked={checkedExps.includes(expense._id.toString())} id={expense._id.toString()} className='text-center' onChange={handleCheck} /></td>
@@ -739,6 +777,43 @@ function ExpenseRow({ expense, checkedExps, handleCheck, handleDbClickEdit, bg }
         <td className={bgClr}>{expense.category}</td>
         <td className={bgClr}>{expense.notes ? expense.notes : ""}</td>
     </tr>)
+}
+
+interface ExpensePaginationProps {
+    currentPage: number,
+    setCurrentPage: (page: number) => void,
+    perPage: number,
+    totalExpenses: number,
+    getExpenses: (sort?: boolean, page?: number) => void
+}
+
+function ExpensePagination({ currentPage, setCurrentPage, perPage, totalExpenses, getExpenses }: ExpensePaginationProps) {
+    const totalPages = Math.ceil(totalExpenses / perPage);
+    const pageNumbers: number[] = [];
+
+    for (let i = 1; i <= totalPages; i++) {
+        if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+            pageNumbers.push(i);
+        }
+    }
+
+    return (
+        pageNumbers.length > 1 &&
+        <Pagination className='mb-4 position-fixed bottom-0 start-50 translate-middle-x'>
+            <Pagination.First disabled={currentPage === 1} onClick={() => { setCurrentPage(1); getExpenses(true, 1) }} />
+            <Pagination.Prev disabled={currentPage === 1} onClick={() => { setCurrentPage(currentPage - 1); getExpenses(true, currentPage - 1) }} />
+            {pageNumbers.map((number, index) => (
+                <React.Fragment key={number}>
+                    {index > 0 && number - pageNumbers[index - 1] > 1 && <Pagination.Ellipsis />}
+                    <Pagination.Item active={number === currentPage} onClick={() => { setCurrentPage(number); getExpenses(true, number) }}>
+                        {number}
+                    </Pagination.Item>
+                </React.Fragment>
+            ))}
+            <Pagination.Next disabled={currentPage === totalPages} onClick={() => { setCurrentPage(currentPage + 1); getExpenses(true, currentPage + 1) }} />
+            <Pagination.Last disabled={currentPage === totalPages} onClick={() => { setCurrentPage(totalPages); getExpenses(true, totalPages) }} />
+        </Pagination>
+    );
 }
 
 export default Expenses
