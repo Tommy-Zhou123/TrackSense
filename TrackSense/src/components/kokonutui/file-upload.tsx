@@ -282,9 +282,13 @@ export default function FileUpload({
       if (!acceptedFileTypes?.length) return null;
 
       const fileType = file.type.toLowerCase();
-      if (
-        !acceptedFileTypes.some((type) => fileType.match(type.toLowerCase()))
-      ) {
+      const fileName = file.name.toLowerCase();
+      const matchesType = acceptedFileTypes.some((type) => {
+        const accepted = type.toLowerCase();
+        if (accepted.startsWith(".")) return fileName.endsWith(accepted);
+        return fileType === accepted || (fileType.length > 0 && fileType.includes(accepted));
+      });
+      if (!matchesType) {
         return {
           message: `File type must be ${acceptedFileTypes.join(", ")}`,
           code: "INVALID_FILE_TYPE",

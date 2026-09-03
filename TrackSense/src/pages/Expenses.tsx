@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Header } from './Home';
 import { api } from '../lib/api';
+import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import {
     ArrowDown,
@@ -9,12 +10,15 @@ import {
     ArrowUp,
     ArrowUpAZ,
     ArrowUp01,
+    Check,
+    ChevronDown,
     ChevronLeft,
     ChevronRight,
     ChevronUp,
     ChevronsLeft,
     ChevronsRight,
     Search,
+    X,
 } from 'lucide-react';
 import FileUpload from '@/components/kokonutui/file-upload';
 import { Button } from '@/components/ui/button';
@@ -30,11 +34,12 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import {
     Table,
     TableBody,
@@ -43,7 +48,26 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import { parseExpenseCsv, CsvParseResult } from '../utils/csvImport';
+import {
+    applyColumnMapping,
+    assignColumnField,
+    inspectCsv,
+    mappingError,
+    parseAmount,
+} from '@/utils/csvImport';
+import type {
+    ColumnField,
+    ColumnMapping,
+    CsvInspection,
+    ParsedExpense,
+} from '@/types/csvImport';
+import {
+    COLUMN_FIELDS,
+    CSV_PAGE_SIZE,
+    IMPORT_CATEGORY_PAGE_SIZE,
+    NEW_CATEGORY_OPTION,
+    UNMAPPED,
+} from '@/constants/csvImport';
 
 interface Expense {
     _id: string,
@@ -162,12 +186,25 @@ const Expenses = () => {
     const [expanded, setExpanded] = useState<Map<string, boolean>>(new Map());
 
     const [showImport, setShowImport] = useState(false);
-    const [csvResult, setCsvResult] = useState<CsvParseResult | null>(null);
+    const [importStep, setImportStep] = useState<"map" | "categories">("map");
+    const [csvPreview, setCsvPreview] = useState<CsvInspection | null>(null);
+    const [columnMapping, setColumnMapping] = useState<ColumnMapping | null>(null);
     const [importAccount, setImportAccount] = useState('');
-    const [importCategory, setImportCategory] = useState('Uncategorized');
+    const [importDrafts, setImportDrafts] = useState<ParsedExpense[]>([]);
+    const [importSelected, setImportSelected] = useState<boolean[]>([]);
+    const [importCategories, setImportCategories] = useState<string[]>([]);
+    const [importPage, setImportPage] = useState(1);
+    const [addingCategoryIndex, setAddingCategoryIndex] = useState<number | null>(null);
+    const [newImportCategory, setNewImportCategory] = useState('');
     const [importing, setImporting] = useState(false);
     const [importError, setImportError] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const csvResult = useMemo(() => {
+        if (!csvPreview || !columnMapping) return null;
+        return applyColumnMapping(csvPreview, columnMapping);
+    }, [csvPreview, columnMapping]);
+    const csvMappingError = columnMapping ? mappingError(columnMapping) : '';
 
     const navigate = useNavigate();
 
@@ -271,10 +308,33 @@ const Expenses = () => {
 
     function closeImport() {
         setShowImport(false);
-        setCsvResult(null);
+        setImportStep("map");
+        setCsvPreview(null);
+        setColumnMapping(null);
+        setImportDrafts([]);
+        setImportSelected([]);
+        setImportCategories([]);
+        setImportPage(1);
+        setAddingCategoryIndex(null);
+        setNewImportCategory('');
         setImportError('');
         setImporting(false);
         if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+
+    function loadCsvText(text: string) {
+        const inspection = inspectCsv(text);
+        const accounts = [...new Set(expensesCopy.map((expense) => expense.account).filter(Boolean))];
+        setCsvPreview(inspection);
+        setColumnMapping(inspection.suggestedMapping);
+        setImportAccount(accounts[0] || '');
+        setImportStep("map");
+        setImportDrafts([]);
+        setImportSelected([]);
+        setImportPage(1);
+        setAddingCategoryIndex(null);
+        setNewImportCategory('');
+        setImportError('');
     }
 
     function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -289,12 +349,7 @@ const Expenses = () => {
         const reader = new FileReader();
         reader.onload = () => {
             try {
-                const result = parseExpenseCsv(String(reader.result || ''));
-                const accounts = [...new Set(expensesCopy.map((expense) => expense.account).filter(Boolean))];
-                setCsvResult(result);
-                setImportAccount(accounts[0] || '');
-                setImportCategory('Uncategorized');
-                setImportError('');
+                loadCsvText(String(reader.result || ''));
                 setShowImport(true);
             } catch (err) {
                 alert(err instanceof Error ? err.message : 'Could not read that CSV file.');
@@ -308,22 +363,116 @@ const Expenses = () => {
         reader.readAsText(file);
     }
 
-    function ImportExpenses() {
+    function continueToCategories() {
         if (!csvResult) return;
-        const accountRequired = !csvResult.hasAccount && !importAccount.trim();
-        if (accountRequired) {
+        if (csvMappingError) {
+            setImportError(csvMappingError);
+            return;
+        }
+        if (csvResult.expenses.length === 0) {
+            setImportError('No valid expenses to import with the current column mapping.');
+            return;
+        }
+        if (!csvResult.hasAccount && !importAccount.trim()) {
             setImportError('Please enter an account name for these transactions.');
             return;
         }
 
-        const expensesToImport = csvResult.expenses.map((expense) => ({
-            date: expense.date,
+        const drafts = csvResult.expenses.map((expense, index) => ({
+            ...expense,
             account: expense.account || importAccount.trim(),
+            category: (importDrafts.length === csvResult.expenses.length && importDrafts[index]?.category.trim())
+                || expense.category.trim()
+                || 'Uncategorized',
+        })).filter((expense) => expense.account);
+
+        if (drafts.length === 0) {
+            setImportError('No valid expenses to import.');
+            return;
+        }
+
+        const fromFile = drafts.map((expense) => expense.category).filter(Boolean);
+        const fromExisting = expensesCopy.map((expense) => expense.category).filter(Boolean);
+        const categories = [...new Set(['Uncategorized', ...fromExisting, ...fromFile, ...importCategories])].sort((a, b) => a.localeCompare(b));
+
+        setImportDrafts(drafts);
+        setImportSelected((current) => current.length === drafts.length ? current : drafts.map(() => true));
+        setImportCategories(categories);
+        setImportPage(1);
+        setAddingCategoryIndex(null);
+        setNewImportCategory('');
+        setImportError('');
+        setImportStep('categories');
+    }
+
+    function setDraftCategory(index: number, category: string) {
+        setImportDrafts((current) => current.map((expense, i) => (
+            i === index ? { ...expense, category } : expense
+        )));
+    }
+
+    function confirmNewImportCategory(index: number) {
+        const name = newImportCategory.trim();
+        if (!name) return;
+        setImportCategories((current) => current.includes(name) ? current : [...current, name].sort((a, b) => a.localeCompare(b)));
+        setDraftCategory(index, name);
+        setAddingCategoryIndex(null);
+        setNewImportCategory('');
+    }
+
+    function toggleImportSelected(index: number, checked: boolean) {
+        setImportSelected((current) => current.map((value, i) => i === index ? checked : value));
+    }
+
+    function toggleImportSelectedAll(checked: boolean) {
+        setImportSelected((current) => current.map(() => checked));
+    }
+
+    function negateAmountColumn() {
+        if (!csvPreview || !columnMapping) return;
+        const amountIdx = columnMapping.amount !== UNMAPPED
+            ? columnMapping.amount
+            : columnMapping.debit !== UNMAPPED
+                ? columnMapping.debit
+                : UNMAPPED;
+        if (amountIdx === UNMAPPED) {
+            setImportError('Map an Amount column first.');
+            return;
+        }
+
+        setCsvPreview({
+            ...csvPreview,
+            rows: csvPreview.rows.map((row) => {
+                const next = [...row];
+                const parsed = parseAmount(next[amountIdx] || "");
+                if (parsed == null) return row;
+                const negated = parsed * -1;
+                next[amountIdx] = Number.isInteger(negated) ? String(negated) : String(Number(negated.toFixed(4)));
+                return next;
+            }),
+        });
+        setImportError('');
+    }
+
+    function ImportExpenses() {
+        const selectedDrafts = importDrafts.filter((_, index) => importSelected[index]);
+        if (selectedDrafts.length === 0) {
+            setImportError('Select at least one transaction to import.');
+            return;
+        }
+        if (selectedDrafts.some((expense) => !expense.category.trim())) {
+            setImportError('Please choose a category for every selected transaction.');
+            return;
+        }
+
+        const expensesToImport = selectedDrafts.map((expense) => ({
+            date: expense.date,
+            account: expense.account,
             vendor: expense.vendor,
             amount: expense.amount,
-            category: expense.category || importCategory.trim() || 'Uncategorized',
+            category: expense.category.trim(),
             notes: expense.notes,
-        })).filter((expense) => expense.account);
+        }));
 
         if (expensesToImport.length === 0) {
             setImportError('No valid expenses to import.');
@@ -496,7 +645,7 @@ const Expenses = () => {
             setGroupMode("none");
             setExpanded(new Map());
             if (searchByQuery) {
-                filterBySearch(searchBySelect, searchByQuery);
+                filterBySearch(searchBySelect, searchByQuery, "none");
             } else {
                 setExpenses(expensesCopy.slice((currentPage - 1) * perPage, currentPage * perPage));
             }
@@ -525,26 +674,35 @@ const Expenses = () => {
         setExpanded(buildExpandedMap(list, groupMode, open));
     }
 
-    function filterBySearch(filterBy: string, searchTerm: string) {
+    function filterBySearch(filterBy: string, searchTerm: string, grouping: ExpensePart = groupMode) {
         if (searchTerm === "" || searchTerm === null) {
-            setExpenses(expensesCopy);
-        } else {
-            let updatedExpenses: Expense[] = [...expensesCopy];
-            if (filterBy === "date") {
-                updatedExpenses = updatedExpenses.filter(expense => { return formatDate(expense.date).toLowerCase().includes(searchTerm.toLowerCase()) });
-            } else if (filterBy === "account") {
-                updatedExpenses = updatedExpenses.filter(expense => { return expense.account.toLowerCase().includes(searchTerm.toLowerCase()) });
-            } else if (filterBy === "vendor") {
-                updatedExpenses = updatedExpenses.filter(expense => { return expense.vendor.toLowerCase().includes(searchTerm.toLowerCase()) });
-            } else if (filterBy === "category") {
-                updatedExpenses = updatedExpenses.filter(expense => { return expense.category.toLowerCase().includes(searchTerm.toLowerCase()) });
-            } else if (filterBy === "amount") {
-                updatedExpenses = updatedExpenses.filter(expense => { return expense.amount.toString().includes(searchTerm) });
-            } else if (filterBy === "notes") {
-                updatedExpenses = updatedExpenses.filter(expense => { return expense.notes.toLowerCase().includes(searchTerm.toLowerCase()) });
+            if (grouping === "none") {
+                setExpenses(expensesCopy.slice((currentPage - 1) * perPage, currentPage * perPage));
+            } else {
+                setExpenses(sortExpenseList(expensesCopy, grouping, "down"));
             }
-            setExpenses(updatedExpenses); //don't update copy to keep original data
+            return;
         }
+
+        let updatedExpenses: Expense[] = [...expensesCopy];
+        if (filterBy === "date") {
+            updatedExpenses = updatedExpenses.filter(expense => formatDate(expense.date).toLowerCase().includes(searchTerm.toLowerCase()));
+        } else if (filterBy === "account") {
+            updatedExpenses = updatedExpenses.filter(expense => (expense.account || "").toLowerCase().includes(searchTerm.toLowerCase()));
+        } else if (filterBy === "vendor") {
+            updatedExpenses = updatedExpenses.filter(expense => (expense.vendor || "").toLowerCase().includes(searchTerm.toLowerCase()));
+        } else if (filterBy === "category") {
+            updatedExpenses = updatedExpenses.filter(expense => (expense.category || "").toLowerCase().includes(searchTerm.toLowerCase()));
+        } else if (filterBy === "amount") {
+            updatedExpenses = updatedExpenses.filter(expense => expense.amount.toString().includes(searchTerm));
+        } else if (filterBy === "notes") {
+            updatedExpenses = updatedExpenses.filter(expense => (expense.notes || "").toLowerCase().includes(searchTerm.toLowerCase()));
+        }
+        if (grouping !== "none") {
+            updatedExpenses = sortExpenseList(updatedExpenses, grouping, "down");
+            setExpanded(buildExpandedMap(updatedExpenses, grouping, true));
+        }
+        setExpenses(updatedExpenses);
     }
 
     function renderExpenseRow(expense: Expense, bg: boolean) {
@@ -624,6 +782,11 @@ const Expenses = () => {
     }
 
     const selectClassName = "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
+    const importCategoryStart = (importPage - 1) * IMPORT_CATEGORY_PAGE_SIZE;
+    const importSelectedCount = importSelected.filter(Boolean).length;
+    const importAllSelected = importSelected.length > 0 && importSelectedCount === importSelected.length;
+    const importDialogWide = Boolean(csvPreview) && importStep === "map";
+    const importDialogCategories = Boolean(csvPreview) && importStep === "categories";
 
     return (
         <div className="min-h-screen bg-background pb-20">
@@ -656,21 +819,19 @@ const Expenses = () => {
                 <div className="flex flex-wrap items-center justify-between gap-4">
                     <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm text-muted-foreground">Group By:</span>
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button variant="outline">
-                                    {groupMode[0].toUpperCase() + groupMode.slice(1)}
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent>
-                                <DropdownMenuItem onClick={() => handleGroupBy("none")}>None</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleGroupBy("date")}>Date</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleGroupBy("account")}>Account</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleGroupBy("vendor")}>Vendor</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleGroupBy("amount")}>Amount</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleGroupBy("category")}>Category</DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
+                        <Select value={groupMode} onValueChange={(value) => handleGroupBy(value as ExpensePart)}>
+                            <SelectTrigger className="min-w-[8.5rem]">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent position="popper">
+                                <SelectItem value="none">None</SelectItem>
+                                <SelectItem value="date">Date</SelectItem>
+                                <SelectItem value="account">Account</SelectItem>
+                                <SelectItem value="vendor">Vendor</SelectItem>
+                                <SelectItem value="amount">Amount</SelectItem>
+                                <SelectItem value="category">Category</SelectItem>
+                            </SelectContent>
+                        </Select>
                         {groupMode !== "none" &&
                             <>
                                 <Button variant="outline" onClick={() => setAllExpanded(true)}>Expand All</Button>
@@ -688,21 +849,25 @@ const Expenses = () => {
                                 onChange={(e) => { setSearchByQuery(e.target.value); filterBySearch(searchBySelect, e.target.value) }}
                             />
                         </div>
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button variant="outline">
-                                    {searchBySelect[0].toUpperCase() + searchBySelect.slice(1)}
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent>
-                                <DropdownMenuItem onClick={() => { setSearchBySelect("date"); filterBySearch("date", searchByQuery) }}>Date</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => { setSearchBySelect("account"); filterBySearch("account", searchByQuery) }}>Account</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => { setSearchBySelect("vendor"); filterBySearch("vendor", searchByQuery) }}>Vendor</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => { setSearchBySelect("amount"); filterBySearch("amount", searchByQuery) }}>Amount</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => { setSearchBySelect("category"); filterBySearch("category", searchByQuery) }}>Category</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => { setSearchBySelect("notes"); filterBySearch("notes", searchByQuery) }}>Notes</DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
+                        <Select
+                            value={searchBySelect}
+                            onValueChange={(value) => {
+                                setSearchBySelect(value);
+                                filterBySearch(value, searchByQuery);
+                            }}
+                        >
+                            <SelectTrigger className="min-w-[8.5rem]">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent position="popper">
+                                <SelectItem value="date">Date</SelectItem>
+                                <SelectItem value="account">Account</SelectItem>
+                                <SelectItem value="vendor">Vendor</SelectItem>
+                                <SelectItem value="amount">Amount</SelectItem>
+                                <SelectItem value="category">Category</SelectItem>
+                                <SelectItem value="notes">Notes</SelectItem>
+                            </SelectContent>
+                        </Select>
                     </div>
                 </div>
 
@@ -859,25 +1024,26 @@ const Expenses = () => {
             </Dialog>
 
             <Dialog open={showImport} onOpenChange={(open) => { if (!open) closeImport(); }}>
-                <DialogContent className="max-w-2xl">
+                <DialogContent
+                    className={cn(
+                        "flex flex-col overflow-hidden",
+                        importDialogWide && "max-h-[90vh] w-[min(96vw,80rem)] sm:max-w-[80rem]",
+                        importDialogCategories && "max-h-[90vh] w-[min(96vw,56rem)] sm:max-w-4xl",
+                    )}
+                >
                     <DialogHeader>
-                        <DialogTitle>Import CSV</DialogTitle>
+                        <DialogTitle>{importStep === "categories" ? "Assign categories" : "Import CSV"}</DialogTitle>
                     </DialogHeader>
-                    <div className="space-y-4">
-                        {!csvResult &&
+                    <div className={cn("space-y-4", csvPreview && "min-h-0 flex-1 overflow-y-auto")}>
+                        {!csvPreview &&
                             <FileUpload
-                                acceptedFileTypes={[".csv", "text/csv"]}
+                                acceptedFileTypes={[".csv", "text/csv", "application/csv", "application/vnd.ms-excel"]}
                                 uploadDelay={0}
                                 onUploadSuccess={(file) => {
                                     const reader = new FileReader();
                                     reader.onload = () => {
                                         try {
-                                            const result = parseExpenseCsv(String(reader.result || ""));
-                                            const accounts = [...new Set(expensesCopy.map((expense) => expense.account).filter(Boolean))];
-                                            setCsvResult(result);
-                                            setImportAccount(accounts[0] || "");
-                                            setImportCategory("Uncategorized");
-                                            setImportError("");
+                                            loadCsvText(String(reader.result || ""));
                                         } catch (err) {
                                             alert(err instanceof Error ? err.message : "Could not read that CSV file.");
                                         }
@@ -886,15 +1052,48 @@ const Expenses = () => {
                                 }}
                             />
                         }
-                        {csvResult &&
+                        {csvPreview && columnMapping && importStep === "map" &&
                             <>
-                                <p className="text-sm text-muted-foreground">
-                                    Found {csvResult.expenses.length} expense{csvResult.expenses.length === 1 ? "" : "s"}
-                                    {csvResult.skipped > 0 ? ` (${csvResult.skipped} row${csvResult.skipped === 1 ? "" : "s"} skipped)` : ""}.
-                                </p>
-                                {!csvResult.hasAccount &&
+                                <div className="flex items-center justify-between gap-2">
+                                    <p className="text-sm text-muted-foreground">
+                                        Choose what each column maps to. Scroll to review the file like a spreadsheet.
+                                    </p>
+                                    <div className="flex shrink-0 items-center gap-2">
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={negateAmountColumn}
+                                        >
+                                            Multiply debits
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => { setCsvPreview(null); setColumnMapping(null); setImportStep("map"); setImportError(""); }}
+                                        >
+                                            Change file
+                                        </Button>
+                                    </div>
+                                </div>
+                                <CsvSpreadsheetMapper
+                                    key={csvPreview.originalHeaders.join("|")}
+                                    headers={csvPreview.originalHeaders}
+                                    rows={csvPreview.rows}
+                                    mapping={columnMapping}
+                                    onChange={(next) => { setColumnMapping(next); setImportError(""); }}
+                                />
+                                {csvMappingError && <p className="text-sm text-destructive">{csvMappingError}</p>}
+                                {csvResult &&
+                                    <p className="text-sm text-muted-foreground">
+                                        {csvResult.expenses.length} expense{csvResult.expenses.length === 1 ? "" : "s"} ready to import
+                                        {csvResult.skipped > 0 ? ` (${csvResult.skipped} row${csvResult.skipped === 1 ? "" : "s"} skipped)` : ""}.
+                                    </p>
+                                }
+                                {csvResult && !csvResult.hasAccount &&
                                     <div className="space-y-2">
-                                        <Label htmlFor="importAccount">Account</Label>
+                                        <Label htmlFor="importAccount">Account for imported rows</Label>
                                         <Input
                                             required
                                             id="importAccount"
@@ -905,57 +1104,111 @@ const Expenses = () => {
                                         />
                                     </div>
                                 }
-                                {!csvResult.hasCategory &&
-                                    <div className="space-y-2">
-                                        <Label htmlFor="importCategory">Category</Label>
-                                        <Input
-                                            id="importCategory"
-                                            type="text"
-                                            value={importCategory}
-                                            onChange={(e) => setImportCategory(e.target.value)}
-                                        />
-                                    </div>
-                                }
-                                <div className="max-h-80 overflow-auto rounded-md border">
+                                {importError && <p className="text-sm text-destructive">{importError}</p>}
+                            </>
+                        }
+                        {importStep === "categories" &&
+                            <>
+                                <p className="text-sm text-muted-foreground">
+                                    Set a category for each transaction. Uncheck rows you do not want to import.
+                                </p>
+                                <div className="rounded-md border">
                                     <Table>
                                         <TableHeader>
                                             <TableRow>
+                                                <TableHead className="w-10 text-center">
+                                                    <Checkbox
+                                                        checked={importAllSelected}
+                                                        onCheckedChange={(checked) => toggleImportSelectedAll(checked === true)}
+                                                        aria-label="Select all transactions"
+                                                    />
+                                                </TableHead>
                                                 <TableHead>Date</TableHead>
                                                 <TableHead>Account</TableHead>
                                                 <TableHead>Vendor</TableHead>
                                                 <TableHead>Amount</TableHead>
-                                                <TableHead>Category</TableHead>
-                                                <TableHead>Notes</TableHead>
+                                                <TableHead className="w-[18rem] min-w-[18rem]">Category</TableHead>
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
-                                            {csvResult.expenses.slice(0, 8).map((expense, index) => (
-                                                <TableRow key={`preview-${index}`}>
-                                                    <TableCell>{formatDate(expense.date)}</TableCell>
-                                                    <TableCell>{expense.account || importAccount || "—"}</TableCell>
-                                                    <TableCell>{expense.vendor}</TableCell>
-                                                    <TableCell>{expense.amount}</TableCell>
-                                                    <TableCell>{expense.category || importCategory || "—"}</TableCell>
-                                                    <TableCell>{expense.notes || ""}</TableCell>
+                                            {importDrafts.slice(importCategoryStart, importCategoryStart + IMPORT_CATEGORY_PAGE_SIZE).map((expense, index) => {
+                                                const draftIndex = importCategoryStart + index;
+                                                const included = importSelected[draftIndex] !== false;
+                                                return (
+                                                    <TableRow key={`import-cat-${draftIndex}`} className={included ? "" : "opacity-50"}>
+                                                        <TableCell className="text-center">
+                                                            <Checkbox
+                                                                checked={included}
+                                                                onCheckedChange={(checked) => toggleImportSelected(draftIndex, checked === true)}
+                                                                aria-label={`Include ${expense.vendor}`}
+                                                            />
+                                                        </TableCell>
+                                                        <TableCell>{formatDate(expense.date)}</TableCell>
+                                                        <TableCell>{expense.account}</TableCell>
+                                                        <TableCell className="max-w-[12rem] truncate" title={expense.vendor}>{expense.vendor}</TableCell>
+                                                        <TableCell>{expense.amount}</TableCell>
+                                                        <TableCell className="w-[18rem] min-w-[18rem]">
+                                                            <ImportCategorySelect
+                                                                value={expense.category}
+                                                                categories={importCategories}
+                                                                isAdding={addingCategoryIndex === draftIndex}
+                                                                newName={newImportCategory}
+                                                                selectClassName={`${selectClassName} h-8`}
+                                                                onChange={(category) => setDraftCategory(draftIndex, category)}
+                                                                onStartAdd={() => { setAddingCategoryIndex(draftIndex); setNewImportCategory(""); }}
+                                                                onNewNameChange={setNewImportCategory}
+                                                                onConfirmAdd={() => confirmNewImportCategory(draftIndex)}
+                                                                onCancelAdd={() => { setAddingCategoryIndex(null); setNewImportCategory(""); }}
+                                                            />
+                                                        </TableCell>
+                                                    </TableRow>
+                                                );
+                                            })}
+                                            {Array.from({ length: Math.max(0, IMPORT_CATEGORY_PAGE_SIZE - Math.min(IMPORT_CATEGORY_PAGE_SIZE, importDrafts.length - importCategoryStart)) }).map((_, index) => (
+                                                <TableRow key={`import-cat-empty-${index}`} className="pointer-events-none hover:bg-transparent">
+                                                    <TableCell className="text-center"><div className="h-8" /></TableCell>
+                                                    <TableCell><div className="h-8" /></TableCell>
+                                                    <TableCell><div className="h-8" /></TableCell>
+                                                    <TableCell><div className="h-8" /></TableCell>
+                                                    <TableCell><div className="h-8" /></TableCell>
+                                                    <TableCell className="w-[18rem] min-w-[18rem]"><div className="h-8" /></TableCell>
                                                 </TableRow>
                                             ))}
                                         </TableBody>
                                     </Table>
                                 </div>
-                                {csvResult.expenses.length > 8 &&
-                                    <p className="text-sm text-muted-foreground">Showing the first 8 of {csvResult.expenses.length} rows.</p>
-                                }
+                                <ImportCategoryPager
+                                    page={importPage}
+                                    perPage={IMPORT_CATEGORY_PAGE_SIZE}
+                                    total={importDrafts.length}
+                                    onPage={setImportPage}
+                                />
                                 {importError && <p className="text-sm text-destructive">{importError}</p>}
                             </>
                         }
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" disabled={importing} onClick={closeImport}>Cancel</Button>
-                        {csvResult &&
-                            <Button disabled={importing} type="button" onClick={ImportExpenses}>
-                                {importing ? "Importing..." : "Import"}
-                            </Button>
-                        }
+                        {importStep === "categories" ? (
+                            <>
+                                <Button variant="outline" disabled={importing} onClick={() => { setImportStep("map"); setImportError(""); }}>Back</Button>
+                                <Button disabled={importing || importSelectedCount === 0 || addingCategoryIndex !== null} type="button" onClick={ImportExpenses}>
+                                    {importing ? "Importing..." : `Import${importSelectedCount ? ` (${importSelectedCount})` : ""}`}
+                                </Button>
+                            </>
+                        ) : (
+                            <>
+                                <Button variant="outline" disabled={importing} onClick={closeImport}>Cancel</Button>
+                                {csvPreview &&
+                                    <Button
+                                        disabled={importing || Boolean(csvMappingError) || !csvResult?.expenses.length}
+                                        type="button"
+                                        onClick={continueToCategories}
+                                    >
+                                        Continue
+                                    </Button>
+                                }
+                            </>
+                        )}
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
@@ -963,6 +1216,286 @@ const Expenses = () => {
     )
 }
 
+
+interface CsvSpreadsheetMapperProps {
+    headers: string[];
+    rows: string[][];
+    mapping: ColumnMapping;
+    onChange: (mapping: ColumnMapping) => void;
+}
+
+function CsvSpreadsheetMapper({ headers, rows, mapping, onChange }: CsvSpreadsheetMapperProps) {
+    const [visibleColumns, setVisibleColumns] = useState(CSV_PAGE_SIZE);
+    const [visibleRows, setVisibleRows] = useState(CSV_PAGE_SIZE);
+
+    const columnField = useMemo(() => {
+        const mapped = new Map<number, ColumnField>();
+        for (const field of COLUMN_FIELDS) {
+            if (mapping[field.key] >= 0) mapped.set(mapping[field.key], field.key);
+        }
+        return mapped;
+    }, [mapping]);
+
+    const shownHeaders = headers.slice(0, visibleColumns);
+    const shownRows = rows.slice(0, visibleRows);
+    const hiddenColumns = headers.length - shownHeaders.length;
+    const hiddenRows = rows.length - shownRows.length;
+
+    const cellClass = "border-r border-b border-border px-2 py-1.5 text-left text-xs";
+
+    return (
+        <div className="overflow-auto rounded-md border bg-background" style={{ maxHeight: "min(50vh, 28rem)" }}>
+            <div className="min-w-max pb-5">
+            <table className="border-separate border-spacing-0 text-sm">
+                <thead className="sticky top-0 z-20 bg-muted">
+                    <tr>
+                        <th
+                            className={cn(
+                                cellClass,
+                                "sticky left-0 z-30 w-12 min-w-12 bg-muted font-medium text-muted-foreground",
+                            )}
+                        />
+                        {shownHeaders.map((_, index) => {
+                            const field = columnField.get(index) ?? "";
+                            return (
+                                <th
+                                    key={`map-${index}`}
+                                    className={cn(
+                                        cellClass,
+                                        "min-w-[10.5rem] bg-muted p-1.5 font-normal",
+                                        field && "bg-accent",
+                                    )}
+                                >
+                                    <select
+                                        aria-label={`Map ${headers[index] || `column ${index + 1}`}`}
+                                        className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                                        value={field}
+                                        onChange={(e) => onChange(assignColumnField(mapping, index, e.target.value as ColumnField | ""))}
+                                    >
+                                        <option value="">Don't use</option>
+                                        {COLUMN_FIELDS.map((item) => (
+                                            <option key={item.key} value={item.key}>
+                                                {item.label}{item.required ? " *" : ""}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </th>
+                            );
+                        })}
+                        {hiddenColumns > 0 &&
+                            <th className={cn(cellClass, "sticky right-0 z-20 min-w-[4.5rem] bg-muted p-1")}>
+                                <button
+                                    type="button"
+                                    className="flex h-8 w-full items-center justify-center rounded-md hover:bg-background"
+                                    onClick={() => setVisibleColumns((count) => count + CSV_PAGE_SIZE)}
+                                    aria-label={`Show ${hiddenColumns} more columns`}
+                                >
+                                    <ChevronRight className="h-4 w-4" />
+                                </button>
+                            </th>
+                        }
+                    </tr>
+                    <tr>
+                        <th
+                            className={cn(
+                                cellClass,
+                                "sticky left-0 z-30 bg-muted text-center text-[11px] font-medium text-muted-foreground",
+                            )}
+                        >
+                            #
+                        </th>
+                        {shownHeaders.map((header, index) => (
+                            <th
+                                key={`header-${index}`}
+                                className={cn(
+                                    cellClass,
+                                    "max-w-[14rem] truncate bg-muted text-[11px] font-semibold",
+                                    columnField.has(index) && "bg-accent",
+                                )}
+                                title={header || `Column ${index + 1}`}
+                            >
+                                {header || `Column ${index + 1}`}
+                            </th>
+                        ))}
+                        {hiddenColumns > 0 &&
+                            <th className={cn(cellClass, "sticky right-0 bg-muted text-center text-[11px] font-medium text-muted-foreground")}>
+                                +{hiddenColumns}
+                            </th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    {shownRows.map((row, rowIndex) => (
+                        <tr key={`row-${rowIndex}`} className="hover:bg-muted/40">
+                            <th
+                                className={cn(
+                                    cellClass,
+                                    "sticky left-0 z-10 bg-muted text-center font-medium tabular-nums text-muted-foreground",
+                                )}
+                            >
+                                {rowIndex + 1}
+                            </th>
+                            {shownHeaders.map((_, index) => (
+                                <td
+                                    key={`cell-${rowIndex}-${index}`}
+                                    className={cn(
+                                        cellClass,
+                                        "max-w-[14rem] truncate bg-background font-normal",
+                                        columnField.has(index) && "bg-accent",
+                                    )}
+                                    title={row[index] || ""}
+                                >
+                                    {row[index] || ""}
+                                </td>
+                            ))}
+                            {hiddenColumns > 0 &&
+                                <td className={cn(cellClass, "sticky right-0 bg-muted text-center text-muted-foreground")}>
+                                    …
+                                </td>
+                            }
+                        </tr>
+                    ))}
+                    {hiddenRows > 0 &&
+                        <tr>
+                            <td
+                                className={cn(cellClass, "bg-muted p-0")}
+                                colSpan={shownHeaders.length + (hiddenColumns > 0 ? 2 : 1)}
+                            >
+                                <button
+                                    type="button"
+                                    className="flex w-full items-center justify-center gap-1 py-2 text-xs font-medium text-muted-foreground hover:bg-muted"
+                                    onClick={() => setVisibleRows((count) => count + CSV_PAGE_SIZE)}
+                                >
+                                    <ChevronDown className="h-4 w-4" />
+                                    Show {Math.min(hiddenRows, CSV_PAGE_SIZE)} more rows
+                                    {hiddenRows > CSV_PAGE_SIZE ? ` (${hiddenRows} remaining)` : ""}
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            </div>
+        </div>
+    );
+}
+
+interface ImportCategorySelectProps {
+    value: string;
+    categories: string[];
+    isAdding: boolean;
+    newName: string;
+    selectClassName: string;
+    onChange: (category: string) => void;
+    onStartAdd: () => void;
+    onNewNameChange: (value: string) => void;
+    onConfirmAdd: () => void;
+    onCancelAdd: () => void;
+}
+
+function ImportCategorySelect({
+    value,
+    categories,
+    isAdding,
+    newName,
+    selectClassName,
+    onChange,
+    onStartAdd,
+    onNewNameChange,
+    onConfirmAdd,
+    onCancelAdd,
+}: ImportCategorySelectProps) {
+    const options = categories.includes(value) || !value ? categories : [value, ...categories];
+
+    return (
+        <div className="flex h-8 w-full min-w-[16.5rem] items-center gap-1">
+            {isAdding ? (
+                <Input
+                    className="h-8 min-w-0 flex-1"
+                    value={newName}
+                    autoFocus
+                    placeholder="New category"
+                    aria-label="New category name"
+                    onChange={(e) => onNewNameChange(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") onConfirmAdd();
+                        if (e.key === "Escape") onCancelAdd();
+                    }}
+                />
+            ) : (
+                <select
+                    className={`${selectClassName} min-w-0 flex-1`}
+                    value={value}
+                    aria-label="Category"
+                    onChange={(e) => {
+                        if (e.target.value === NEW_CATEGORY_OPTION) onStartAdd();
+                        else onChange(e.target.value);
+                    }}
+                >
+                    {options.map((category) => (
+                        <option key={category} value={category}>{category}</option>
+                    ))}
+                    <option value={NEW_CATEGORY_OPTION}>New category</option>
+                </select>
+            )}
+            <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                className={cn("size-8 shrink-0", !isAdding && "invisible")}
+                disabled={!isAdding || !newName.trim()}
+                tabIndex={isAdding ? 0 : -1}
+                onClick={onConfirmAdd}
+                aria-label="Save category"
+                aria-hidden={!isAdding}
+            >
+                <Check />
+            </Button>
+            <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                className={cn("size-8 shrink-0", !isAdding && "invisible")}
+                tabIndex={isAdding ? 0 : -1}
+                onClick={onCancelAdd}
+                aria-label="Cancel new category"
+                aria-hidden={!isAdding}
+            >
+                <X />
+            </Button>
+        </div>
+    );
+}
+
+function ImportCategoryPager({
+    page,
+    perPage,
+    total,
+    onPage,
+}: {
+    page: number;
+    perPage: number;
+    total: number;
+    onPage: (page: number) => void;
+}) {
+    const totalPages = Math.max(1, Math.ceil(total / perPage) || 1);
+    const start = total === 0 ? 0 : (page - 1) * perPage + 1;
+    const end = Math.min(page * perPage, total);
+
+    return (
+        <div className="flex items-center justify-between gap-2">
+            <p className="text-sm text-muted-foreground">{start}–{end} of {total}</p>
+            <div className="flex items-center gap-1">
+                <Button type="button" size="icon-sm" variant="outline" disabled={page === 1} onClick={() => onPage(page - 1)} aria-label="Previous page">
+                    <ChevronLeft />
+                </Button>
+                <Button type="button" size="icon-sm" variant="outline" disabled={page === totalPages} onClick={() => onPage(page + 1)} aria-label="Next page">
+                    <ChevronRight />
+                </Button>
+            </div>
+        </div>
+    );
+}
 
 interface EditableExpenseRowProps {
     expense: Expense,
