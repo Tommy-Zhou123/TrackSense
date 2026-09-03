@@ -1,62 +1,42 @@
-import express from "express"
-import mongoose, { mongo } from "mongoose"
-import cors from "cors"
-import { isLoggedIn } from "./middleware.js"
-import { PORT, mongoDbUrl, secret } from "./config.js"
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import { clerkMiddleware } from "@clerk/express";
+import { PORT, frontendUrl } from "./config.js";
+import { ipLimiter, userLimiter, rejectBotlikeRequests } from "./lib/rateLimit.js";
 
-import expenseRoute from "./routes/expenseRoute.js"
-import loginRoute from "./routes/loginRoute.js"
+import expenseRoute from "./routes/expenseRoute.js";
+import userRoute from "./routes/userRoute.js";
 
-import passport from "passport"
-import session from "express-session"
-import LocalStrategy from "passport-local"
+const app = express();
 
-import { User } from "./models/user.js"
-
-const app = express()
-
-app.use(express.urlencoded({ extended: false }))
+app.set("trust proxy", 1);
 app.use(
-	session({
-		secret: secret,
-		resave: false,
-		saveUninitialized: true,
+	helmet({
+		crossOriginResourcePolicy: { policy: "cross-origin" },
 	})
-)
-
-passport.use(
-	new LocalStrategy(
-		{
-			usernameField: "email",
-		},
-		User.authenticate()
-	)
-)
-passport.serializeUser(User.serializeUser())
-passport.deserializeUser(User.deserializeUser())
-
-app.use(passport.initialize())
-app.use(passport.session())
-
-app.use(express.json())
-
-//middleware for handling CORS policy
-app.use(cors())
-
-app.use("/", loginRoute)
-app.use("/expenses", expenseRoute)
-
-mongoose
-	.connect(mongoDbUrl)
-	.then(() => {
-		console.log("Connected to MongoDB!")
-
-		app.listen(PORT, () => {
-			console.log(`Server is running on port ${PORT}`)
-		})
+);
+app.use(
+	cors({
+		origin: frontendUrl,
+		credentials: true,
 	})
-	.catch((err) => {
-		console.log(err)
+);
+app.use(rejectBotlikeRequests);
+app.use(express.json({ limit: "1mb" }));
+app.use("/api", ipLimiter);
+app.use(
+	clerkMiddleware({
+		authorizedParties: [frontendUrl],
 	})
+);
+app.use("/api", userLimiter);
 
-export default app
+app.use("/api", userRoute);
+app.use("/api/expenses", expenseRoute);
+
+app.listen(PORT, () => {
+	console.log(`Server is running on port ${PORT}`);
+});
+
+export default app;

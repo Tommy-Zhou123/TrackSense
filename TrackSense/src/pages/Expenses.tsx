@@ -1,6 +1,6 @@
-import axios from 'axios'
 import React, { useState, useEffect } from 'react'
 import { Header } from './Home';
+import { api } from '../lib/api';
 import Dropdown from 'react-bootstrap/Dropdown';
 import Container from 'react-bootstrap/Container';
 import Row from 'react-bootstrap/Row';
@@ -18,10 +18,8 @@ import { useNavigate } from 'react-router-dom';
 
 import { SortAlphaDown, SortNumericDown, SortDown, SortUp, SortAlphaUp, SortNumericUp, Search, ChevronRight, ChevronUp, ChevronDown } from 'react-bootstrap-icons';
 
-const API_URL: string = import.meta.env.VITE_API_URL
-
 interface Expense {
-    _id: number,
+    _id: string,
     date: Date,
     account: string,
     vendor: string,
@@ -62,7 +60,7 @@ const Expenses = () => {
     const [showAcc, setShowAcc] = useState(false);
 
     const [editMode, setEditMode] = useState(false);
-    const [editId, setEditId] = useState(-1);
+    const [editId, setEditId] = useState<string | null>(null);
 
     const [date, setDate] = useState<Date>(new Date());
     const [account, setAccount] = useState('');
@@ -114,7 +112,7 @@ const Expenses = () => {
     }
 
     function getExpenses(sort: boolean = true, page: number = -1) {
-        axios.get(`${API_URL}/api/expenses`)
+        api.get(`/api/expenses`)
             .then((response) => {
                 const expensesWithDates = response.data.expenses.map((expense: any) => ({
                     ...expense,
@@ -129,11 +127,9 @@ const Expenses = () => {
                 setExpensesCopy(expensesWithDates);
             })
             .catch((err) => {
-                let expensesWithDates = [{ _id: 0, date: new Date(), account: "Account", vendor: "Vendor", amount: 0, category: "Category", notes: "Notes" }];
-                if (sort) expensesWithDates.sort(function (a: Expense, b: Expense) { return a.date.getTime() - b.date.getTime() });
-                setExpenses(expensesWithDates);
-                setExpensesCopy(expensesWithDates);
-                if (err?.response?.data?.message === "Not Logged In") {
+                setExpenses([]);
+                setExpensesCopy([]);
+                if (err?.response?.data?.message === "Not Logged In" || err?.response?.status === 401) {
                     navigate("/login");
                 } else {
                     alert("Error retrieving expense data, please try again later.")
@@ -147,7 +143,7 @@ const Expenses = () => {
             const data = {
                 date, account, vendor, amount, category, notes
             }
-            axios.post(`${API_URL}/api/expenses/add`, data)
+            api.post(`/api/expenses/add`, data)
                 .then((res) => {
                     let updatedExpenses: Expense[] = [...expenses, { _id: res.data._id, ...data }];
                     setExpenses(updatedExpenses);
@@ -171,7 +167,7 @@ const Expenses = () => {
         let updatedExpenses: Expense[] = [...expenses];
         let updatedExpensesCopy: Expense[] = [...expensesCopy];
         editableExpenses.forEach(expense => {
-            axios.put(`${API_URL}/api/expenses/${expense._id}`, expense)
+            api.put(`/api/expenses/${expense._id}`, expense)
                 .then(() => {
                     updatedExpenses.forEach((exp, index) => {
                         if (exp._id === expense._id) {
@@ -190,12 +186,12 @@ const Expenses = () => {
                 .catch((err) => console.log(err))
         });
         setEditMode(false);
-        setEditId(-1);
+        setEditId(null);
     }
 
     function DeleteExpenses() {
         checkedExps.forEach(expense => {
-            axios.delete(`${API_URL}/api/expenses/${expense}`)
+            api.delete(`/api/expenses/${expense}`)
                 .then((res) => {
                     let updatedExpenses: Expense[] = [...expenses];
                     updatedExpenses = updatedExpenses.filter((exp: Expense) => exp._id != res.data._id);
@@ -262,7 +258,7 @@ const Expenses = () => {
         }
     }
 
-    function handleDbClickEdit(id: number) {
+    function handleDbClickEdit(id: string) {
         setEditableExpenses(expenses);
         setEditId(id);
     }
@@ -388,18 +384,19 @@ const Expenses = () => {
         setExpanded(expMap);
     }
 
-    function updateExpanded(id: number): void {
+    function updateExpanded(id: string | number): void {
         let expandedCopy = new Map(expanded);
         if (id === 1) {
-            expandedCopy.forEach((value, key) => {
+            for (const key of expandedCopy.keys()) {
                 expandedCopy.set(key, true);
-            });
+            }
         } else if (id === -1) {
-            expandedCopy.forEach((value, key) => {
+            for (const key of expandedCopy.keys()) {
                 expandedCopy.set(key, false);
-            });
+            }
         } else {
-            expandedCopy.set(id.toString(), !expanded.get(id.toString()));
+            const key = id.toString();
+            expandedCopy.set(key, !expanded.get(key));
         }
         setExpanded(expandedCopy);
     }
@@ -415,9 +412,9 @@ const Expenses = () => {
                     <Col className='d-flex flex-nowrap justify-content-end'>
                         <Button className="me-2" onClick={handleShow} variant="outline-dark">Add</Button>
                         <Button variant="outline-dark me-2">Import</Button>
-                        <Button className={editMode || editId != -1 ? "d-none" : ""} variant="outline-dark me-2" onClick={() => { setEditMode(true); setEditableExpenses(expenses); }}>Edit</Button>
-                        <Button className={editMode || editId != -1 ? "" : "d-none"} variant="outline-dark me-2" onClick={EditExpenses}>Save</Button>
-                        <Button className={editMode || editId != -1 ? "" : "d-none"} variant="outline-dark me-2" onClick={() => { setEditMode(false); setEditId(-1); setEditableExpenses(expenses); }}>Cancel</Button>
+                        <Button className={editMode || editId != null ? "d-none" : ""} variant="outline-dark me-2" onClick={() => { setEditMode(true); setEditableExpenses(expenses); }}>Edit</Button>
+                        <Button className={editMode || editId != null ? "" : "d-none"} variant="outline-dark me-2" onClick={EditExpenses}>Save</Button>
+                        <Button className={editMode || editId != null ? "" : "d-none"} variant="outline-dark me-2" onClick={() => { setEditMode(false); setEditId(null); setEditableExpenses(expenses); }}>Cancel</Button>
                         <Button variant="outline-dark" onClick={DeleteExpenses}>Delete</Button>
                     </Col>
                 </Row>
@@ -762,7 +759,7 @@ interface ExpenseRowProps {
     expense: Expense,
     checkedExps: string[],
     handleCheck: (e: React.ChangeEvent<HTMLInputElement>) => void,
-    handleDbClickEdit: (id: number) => void,
+    handleDbClickEdit: (id: string) => void,
     bg: boolean
 }
 

@@ -1,6 +1,10 @@
+import { getAuth } from "@clerk/express";
+
 export const isLoggedIn = (req, res, next) => {
-	if (!req.isAuthenticated()) {
-		return res.status(500).send({ message: "Not Logged In" })
+	const { userId } = getAuth(req);
+	if (!userId) {
+		return res.status(401).send({ message: "Not Logged In" });
 	}
-	next()
-}
+	req.userId = userId;
+	next();
+};

@@ -1,14 +1,29 @@
-import React from 'react'
-import ReactDOM from 'react-dom/client'
-import App from './App.tsx'
-import { BrowserRouter } from 'react-router-dom'
-import 'bootstrap/dist/css/bootstrap.min.css';
+import ReactDOM from "react-dom/client";
+import App from "./App.tsx";
+import { BrowserRouter } from "react-router-dom";
+import { ClerkProvider } from "@clerk/react";
+import { AxiosAuthBridge } from "./components/AxiosAuthBridge";
+import "bootstrap/dist/css/bootstrap.min.css";
 
-import './index.css'
+import "./index.css";
 
+const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <BrowserRouter>
-    <App />
-  </BrowserRouter>,
-)
+if (!PUBLISHABLE_KEY) {
+  throw new Error("Add VITE_CLERK_PUBLISHABLE_KEY to TrackSense/.env.local");
+}
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <ClerkProvider
+    publishableKey={PUBLISHABLE_KEY}
+    afterSignOutUrl="/login"
+    signInUrl="/login"
+    signUpUrl="/register"
+  >
+    <BrowserRouter>
+      <AxiosAuthBridge>
+        <App />
+      </AxiosAuthBridge>
+    </BrowserRouter>
+  </ClerkProvider>
+);

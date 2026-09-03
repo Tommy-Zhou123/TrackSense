@@ -1,49 +1,15 @@
-import axios from "axios";
-import { useEffect, useState } from "react"
-import { Button, FloatingLabel } from "react-bootstrap";
-import Form from 'react-bootstrap/Form';
-import { useNavigate } from "react-router-dom";
-
-
-const API_URL: string = import.meta.env.VITE_API_URL as string
-
+import { Show, SignIn, SignUpButton, useAuth } from "@clerk/react";
+import { Navigate } from "react-router-dom";
 
 const LoginPage = () => {
+    const { isLoaded, isSignedIn } = useAuth();
 
-    const [email, setEmail] = useState("")
-    const [password, setPassword] = useState("")
-    const [error, setError] = useState("")
+    if (!isLoaded) {
+        return null;
+    }
 
-    const navigate = useNavigate();
-
-    useEffect(() => {
-        axios.get(`${API_URL}/api/user`)
-            .then((res) => {
-                if (res.status === 200) {
-                    navigate("/expenses");
-                }
-            })
-            .catch()
-    }, [navigate]);
-
-    function handleLogin(e: React.FormEvent<HTMLFormElement>) {
-        e.preventDefault()
-        if (email != null && password != null) {
-            const data = {
-                email, password
-            }
-            axios.post(`${API_URL}/api/login`, data)
-                .then((res) => {
-                    if (res.status === 200) {
-                        navigate("/expenses");
-                    }
-                })
-                .catch(() => {
-                    setError("*Invalid Email or Password")
-                })
-        } else {
-            alert("Please fill out all required fields")
-        }
+    if (isSignedIn) {
+        return <Navigate to="/expenses" replace />;
     }
 
     return (
@@ -52,51 +18,35 @@ const LoginPage = () => {
                 <div className="card-header">
                     <h3 className="card-title mt-3 pb-1 text-center">TrackSense</h3>
                 </div>
-                <div className="card-body">
-                    <Form onSubmit={handleLogin}>
-                        <FloatingLabel
-                            label="Email address"
-                            className="mb-3 mt-2 text-secondary"
-                        >
-                            <Form.Control
-                                required
-                                value={email}
-                                type="email"
-                                aria-label="email"
-                                aria-describedby="email"
-                                placeholder="Email address"
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
-                            />
-                        </FloatingLabel>
-                        <FloatingLabel
-                            label="Password"
-                            className="mb-2 text-secondary"
-                        >
-                            <Form.Control
-                                required
-                                className="mb-1"
-                                value={password}
-                                type="password"
-                                aria-label="password"
-                                aria-describedby="password"
-                                placeholder="Password"
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
-                            />
-                        </FloatingLabel>
-
-                        <p className="text-danger ms-1">{error}</p>
-
-                        <div className="text-end">
-                            <Button type="submit" className="btn btn-primary mb-1">Login</Button>
-                        </div>
-                    </Form>
+                <div className="card-body d-flex justify-content-center">
+                    <Show when="signed-out">
+                        <SignIn
+                            path="/login"
+                            routing="path"
+                            signUpUrl="/register"
+                            fallbackRedirectUrl="/expenses"
+                            appearance={{
+                                elements: {
+                                    rootBox: "w-100",
+                                    card: "shadow-none bg-transparent p-0",
+                                },
+                            }}
+                        />
+                    </Show>
                 </div>
-                <div className="card-footer text-muted py-3">
-                    Don't have an account?&nbsp;&nbsp;<a href="/register" className="text-decoration-none">Register</a>
+                <div className="card-footer text-muted py-3 text-center">
+                    Don't have an account?{" "}
+                    <Show when="signed-out">
+                        <SignUpButton>
+                            <button className="btn btn-link p-0 align-baseline" type="button">
+                                Register
+                            </button>
+                        </SignUpButton>
+                    </Show>
                 </div>
-            </div >
-        </div >
-    )
-}
+            </div>
+        </div>
+    );
+};
 
-export default LoginPage
+export default LoginPage;
