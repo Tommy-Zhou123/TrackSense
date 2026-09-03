@@ -1,6 +1,6 @@
 {
-  "installCommand": "npm install --prefix backend && npm install --prefix TrackSense",
-  "buildCommand": "VITE_API_URL= npm run build --prefix TrackSense",
+  "installCommand": "npm install --prefix ./backend && npm install --prefix ./TrackSense",
+  "buildCommand": "VITE_API_URL= npm run build --prefix ./TrackSense",
   "outputDirectory": "TrackSense/dist",
   "framework": null,
   "rewrites": [
@@ -9,7 +9,7 @@
   ],
   "functions": {
     "api/index.js": {
-      "maxDuration": 30,
+      "maxDuration": 60,
       "includeFiles": "backend/**/*.js"
     }
   }

@@ -55,7 +55,19 @@ export const importLimiter = rateLimit({
 	message: tooMany(15),
 });
 
+export const parseStatementLimiter = rateLimit({
+	windowMs: 15 * 60 * 1000,
+	limit: 6,
+	standardHeaders: "draft-8",
+	legacyHeaders: false,
+	keyGenerator: clientKey,
+	message: tooMany(15),
+});
+
 export const MAX_IMPORT_ROWS = 1000;
+export const MAX_PDF_BYTES = 12 * 1024 * 1024;
+export const MAX_PDF_PAGES = 20;
+export const GEMINI_TIMEOUT_MS = 50000;
 
 export function rejectBotlikeRequests(req, res, next) {
 	if (req.method === "OPTIONS") {
@@ -67,13 +79,14 @@ export function rejectBotlikeRequests(req, res, next) {
 		return res.status(403).send({ message: "Forbidden" });
 	}
 
-	if (
-		["POST", "PUT", "PATCH"].includes(req.method) &&
-		!req.is("application/json")
-	) {
-		return res
-			.status(415)
-			.send({ message: "Content-Type must be application/json" });
+	if (["POST", "PUT", "PATCH"].includes(req.method)) {
+		const isJson = req.is("application/json");
+		const isMultipart = req.is("multipart/form-data");
+		if (!isJson && !isMultipart) {
+			return res
+				.status(415)
+				.send({ message: "Content-Type must be application/json" });
+		}
 	}
 
 	next();
