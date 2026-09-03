@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import { clerkMiddleware } from "@clerk/express";
-import { PORT, frontendUrl } from "./config.js";
+import { PORT, frontendOrigins } from "./config.js";
 import { ipLimiter, userLimiter, rejectBotlikeRequests } from "./lib/rateLimit.js";
 
 import expenseRoute from "./routes/expenseRoute.js";
@@ -18,7 +18,7 @@ app.use(
 );
 app.use(
 	cors({
-		origin: frontendUrl,
+		origin: frontendOrigins,
 		credentials: true,
 	})
 );
@@ -27,7 +27,7 @@ app.use(express.json({ limit: "1mb" }));
 app.use("/api", ipLimiter);
 app.use(
 	clerkMiddleware({
-		authorizedParties: [frontendUrl],
+		authorizedParties: frontendOrigins,
 	})
 );
 app.use("/api", userLimiter);
@@ -35,8 +35,10 @@ app.use("/api", userLimiter);
 app.use("/api", userRoute);
 app.use("/api/expenses", expenseRoute);
 
-app.listen(PORT, () => {
-	console.log(`Server is running on port ${PORT}`);
-});
+if (!process.env.VERCEL) {
+	app.listen(PORT, () => {
+		console.log(`Server is running on port ${PORT}`);
+	});
+}
 
 export default app;

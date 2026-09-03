@@ -58,6 +58,10 @@ export const importLimiter = rateLimit({
 export const MAX_IMPORT_ROWS = 1000;
 
 export function rejectBotlikeRequests(req, res, next) {
+	if (req.method === "OPTIONS") {
+		return next();
+	}
+
 	const ua = req.get("user-agent");
 	if (!ua || ua.trim().length < 12) {
 		return res.status(403).send({ message: "Forbidden" });
