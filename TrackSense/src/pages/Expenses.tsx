@@ -1,22 +1,49 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Header } from './Home';
 import { api } from '../lib/api';
-import Dropdown from 'react-bootstrap/Dropdown';
-import Container from 'react-bootstrap/Container';
-import Row from 'react-bootstrap/Row';
-import Col from 'react-bootstrap/Col';
-import Stack from 'react-bootstrap/Stack';
-import Button from 'react-bootstrap/Button';
-import Form from 'react-bootstrap/Form';
-import InputGroup from 'react-bootstrap/InputGroup';
-import Table from 'react-bootstrap/Table';
-import Pagination from 'react-bootstrap/Pagination';
-
-import { FormControlProps, Modal } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
-
-
-import { SortAlphaDown, SortNumericDown, SortDown, SortUp, SortAlphaUp, SortNumericUp, Search, ChevronRight, ChevronUp, ChevronDown } from 'react-bootstrap-icons';
+import {
+    ArrowDown,
+    ArrowDownAZ,
+    ArrowDown01,
+    ArrowUp,
+    ArrowUpAZ,
+    ArrowUp01,
+    ChevronLeft,
+    ChevronRight,
+    ChevronUp,
+    ChevronsLeft,
+    ChevronsRight,
+    Search,
+} from 'lucide-react';
+import FileUpload from '@/components/kokonutui/file-upload';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+    Dialog,
+    DialogContent,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from '@/components/ui/table';
+import { parseExpenseCsv, CsvParseResult } from '../utils/csvImport';
 
 interface Expense {
     _id: string,
@@ -32,14 +59,63 @@ type ExpensePart = "none" | "date" | "account" | "vendor" | "amount" | "category
 
 
 
-let groupCounter: number = 1;
-
-let expenseParts: ExpensePart[] = ["none", "date", "account", "vendor", "amount", "category", "notes"];
-
-
 const formatDate = (date: Date) => {
     return date.toISOString().split('T')[0];
 };
+
+function getGroupKey(expense: Expense, mode: ExpensePart): string {
+    switch (mode) {
+        case "date":
+            return formatDate(expense.date);
+        case "amount":
+            return expense.amount.toString();
+        case "account":
+            return expense.account || "";
+        case "vendor":
+            return expense.vendor || "";
+        case "category":
+            return expense.category || "";
+        case "notes":
+            return expense.notes || "";
+        default:
+            return "";
+    }
+}
+
+function sortExpenseList(list: Expense[], sortByProp: ExpensePart, sort: "down" | "up" = "down"): Expense[] {
+    const updated = [...list];
+    const direction = sort === "down" ? 1 : -1;
+    if (sortByProp === "date") {
+        updated.sort((a, b) => direction * (a.date.getTime() - b.date.getTime()));
+    } else if (sortByProp === "amount") {
+        updated.sort((a, b) => direction * (a.amount - b.amount));
+    } else if (sortByProp !== "none") {
+        updated.sort((a, b) => direction * getGroupKey(a, sortByProp).localeCompare(getGroupKey(b, sortByProp)));
+    }
+    return updated;
+}
+
+function groupExpenses(list: Expense[], mode: ExpensePart): { key: string; items: Expense[] }[] {
+    const groups = new Map<string, Expense[]>();
+    for (const expense of list) {
+        const key = getGroupKey(expense, mode);
+        const items = groups.get(key);
+        if (items) {
+            items.push(expense);
+        } else {
+            groups.set(key, [expense]);
+        }
+    }
+    return Array.from(groups, ([key, items]) => ({ key, items }));
+}
+
+function buildExpandedMap(list: Expense[], mode: ExpensePart, open: boolean): Map<string, boolean> {
+    const next = new Map<string, boolean>();
+    for (const expense of list) {
+        next.set(getGroupKey(expense, mode), open);
+    }
+    return next;
+}
 
 
 const Expenses = () => {
@@ -70,7 +146,7 @@ const Expenses = () => {
     const [notes, setNotes] = useState('');
 
     const [currentPage, setCurrentPage] = useState(1);
-    const [perPage, setPerPage] = useState(50);
+    const [perPage] = useState(50);
 
     const [sortDate, setSortDate] = useState<'down' | 'up'>('down');
     const [sortAccount, setSortAccount] = useState<'down' | 'up'>('down');
@@ -85,17 +161,21 @@ const Expenses = () => {
 
     const [expanded, setExpanded] = useState<Map<string, boolean>>(new Map());
 
-    const navigate = useNavigate();
+    const [showImport, setShowImport] = useState(false);
+    const [csvResult, setCsvResult] = useState<CsvParseResult | null>(null);
+    const [importAccount, setImportAccount] = useState('');
+    const [importCategory, setImportCategory] = useState('Uncategorized');
+    const [importing, setImporting] = useState(false);
+    const [importError, setImportError] = useState('');
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
-    let prevGroup = "";
-    let lightBg = true;
+    const navigate = useNavigate();
 
     const handleClose = () => setShowForm(false);
     const handleShow = () => setShowForm(true);
 
     useEffect(() => {
         getExpenses()
-        lightBg = false;
     }, [])
 
     function clearFormValues() {
@@ -189,6 +269,82 @@ const Expenses = () => {
         setEditId(null);
     }
 
+    function closeImport() {
+        setShowImport(false);
+        setCsvResult(null);
+        setImportError('');
+        setImporting(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+
+    function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (!file.name.toLowerCase().endsWith('.csv')) {
+            alert('Please choose a .csv file.');
+            e.target.value = '';
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = () => {
+            try {
+                const result = parseExpenseCsv(String(reader.result || ''));
+                const accounts = [...new Set(expensesCopy.map((expense) => expense.account).filter(Boolean))];
+                setCsvResult(result);
+                setImportAccount(accounts[0] || '');
+                setImportCategory('Uncategorized');
+                setImportError('');
+                setShowImport(true);
+            } catch (err) {
+                alert(err instanceof Error ? err.message : 'Could not read that CSV file.');
+                if (fileInputRef.current) fileInputRef.current.value = '';
+            }
+        };
+        reader.onerror = () => {
+            alert('Could not read that CSV file.');
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        };
+        reader.readAsText(file);
+    }
+
+    function ImportExpenses() {
+        if (!csvResult) return;
+        const accountRequired = !csvResult.hasAccount && !importAccount.trim();
+        if (accountRequired) {
+            setImportError('Please enter an account name for these transactions.');
+            return;
+        }
+
+        const expensesToImport = csvResult.expenses.map((expense) => ({
+            date: expense.date,
+            account: expense.account || importAccount.trim(),
+            vendor: expense.vendor,
+            amount: expense.amount,
+            category: expense.category || importCategory.trim() || 'Uncategorized',
+            notes: expense.notes,
+        })).filter((expense) => expense.account);
+
+        if (expensesToImport.length === 0) {
+            setImportError('No valid expenses to import.');
+            return;
+        }
+
+        setImporting(true);
+        setImportError('');
+        api.post(`/api/expenses/import`, { expenses: expensesToImport })
+            .then((res) => {
+                closeImport();
+                getExpenses();
+                alert(`Imported ${res.data.count} expense${res.data.count === 1 ? '' : 's'}.`);
+            })
+            .catch((err) => {
+                console.error(err);
+                setImporting(false);
+                setImportError(err?.response?.data?.message || 'Error importing expenses, please try again.');
+            });
+    }
+
     function DeleteExpenses() {
         checkedExps.forEach(expense => {
             api.delete(`/api/expenses/${expense}`)
@@ -239,8 +395,7 @@ const Expenses = () => {
         setCatSelect(e.target.value);
     }
 
-    function handleCheck(e: React.ChangeEvent<HTMLInputElement>) {
-        const { id, checked } = e.target;
+    function handleCheck(id: string, checked: boolean) {
         if (checked) {
             setCheckedExps([...checkedExps, id])
         } else {
@@ -248,11 +403,9 @@ const Expenses = () => {
         }
     }
 
-    function handleCheckAll(e: React.ChangeEvent<HTMLInputElement>) {
-        const { checked } = e.target;
+    function handleCheckAll(checked: boolean) {
         if (checked) {
             setCheckedExps(expenses.map((expense) => expense._id.toString()))
-            // setCheckedExps(["123"]) // TODO: REMOVE, ONLY FOR TESTING PURPOSES
         } else {
             setCheckedExps([])
         }
@@ -331,26 +484,45 @@ const Expenses = () => {
     }
 
     function sortBy(sortByProp: ExpensePart, sort: "down" | "up" = "down") {
-        let updatedExpenses: Expense[] = [...expenses];
-        if (sortByProp === "date") {
-            if (sort === "down")
-                updatedExpenses.sort(function (a, b) { return a.date.getTime() - b.date.getTime() });
-            else
-                updatedExpenses.sort(function (a, b) { return b.date.getTime() - a.date.getTime() });
-        } else if (sortByProp === "account" || sortByProp === "vendor" || sortByProp === "category" || sortByProp === "notes") {
-            if (sort === "down")
-                updatedExpenses.sort(function (a, b) { return a.account.localeCompare(b.account) });
-            else
-                updatedExpenses.sort(function (a, b) { return b.account.localeCompare(a.account) });
-        } else if (sortByProp === "amount") {
-            if (sort === "down")
-                updatedExpenses.sort(function (a, b) { return a.amount - b.amount });
-            else
-                updatedExpenses.sort(function (a, b) { return b.amount - a.amount });
+        const updatedExpenses = sortExpenseList(expenses, sortByProp, sort);
+        setExpenses(updatedExpenses);
+        if (editMode) {
+            setEditableExpenses(sortExpenseList(editableExpenses, sortByProp, sort));
+        }
+    }
+
+    function handleGroupBy(mode: ExpensePart) {
+        if (mode === "none") {
+            setGroupMode("none");
+            setExpanded(new Map());
+            if (searchByQuery) {
+                filterBySearch(searchBySelect, searchByQuery);
+            } else {
+                setExpenses(expensesCopy.slice((currentPage - 1) * perPage, currentPage * perPage));
+            }
+            return;
         }
 
-        setExpenses(updatedExpenses);
-        setExpensesCopy(updatedExpenses);
+        const source = searchByQuery ? expenses : (expensesCopy.length ? expensesCopy : expenses);
+        const sorted = sortExpenseList(source, mode, "down");
+        setExpenses(sorted);
+        if (editMode) {
+            setEditableExpenses(sorted);
+        }
+        setGroupMode(mode);
+        setExpanded(buildExpandedMap(sorted, mode, true));
+    }
+
+    function toggleGroup(key: string) {
+        const next = new Map(expanded);
+        const isOpen = expanded.get(key) !== false;
+        next.set(key, !isOpen);
+        setExpanded(next);
+    }
+
+    function setAllExpanded(open: boolean) {
+        const list = editMode ? editableExpenses : expenses;
+        setExpanded(buildExpandedMap(list, groupMode, open));
     }
 
     function filterBySearch(filterBy: string, searchTerm: string) {
@@ -375,355 +547,419 @@ const Expenses = () => {
         }
     }
 
-    function populateExpanded(): void {
-        let uniqueExps: Expense[] = [... new Set(expenses)];
-        let expMap: Map<string, boolean> = new Map();
-        uniqueExps.forEach(exp => {
-            expMap.set(exp._id.toString(), true);
-        });
-        setExpanded(expMap);
+    function renderExpenseRow(expense: Expense, bg: boolean) {
+        if (editMode) {
+            return (
+                <ExpenseEditableRow
+                    key={`editable-${expense._id}`}
+                    expense={expense}
+                    checkedExps={checkedExps}
+                    handleCheck={handleCheck}
+                    bg={bg}
+                    editDate={editDate}
+                    editAccount={editAccount}
+                    editVendor={editVendor}
+                    editAmount={editAmount}
+                    editCategory={editCategory}
+                    editNotes={editNotes}
+                />
+            );
+        }
+
+        if (editId === expense._id) {
+            const exp = editableExpenses.find(e => e._id === expense._id) ?? expense;
+            return (
+                <ExpenseEditableRow
+                    key={`editable-${exp._id}`}
+                    expense={exp}
+                    checkedExps={checkedExps}
+                    handleCheck={handleCheck}
+                    bg={bg}
+                    editDate={editDate}
+                    editAccount={editAccount}
+                    editVendor={editVendor}
+                    editAmount={editAmount}
+                    editCategory={editCategory}
+                    editNotes={editNotes}
+                />
+            );
+        }
+
+        return (
+            <ExpenseRow
+                key={`row-${expense._id}`}
+                expense={expense}
+                checkedExps={checkedExps}
+                handleCheck={handleCheck}
+                handleDbClickEdit={handleDbClickEdit}
+                bg={bg}
+            />
+        );
     }
 
-    function updateExpanded(id: string | number): void {
-        let expandedCopy = new Map(expanded);
-        if (id === 1) {
-            for (const key of expandedCopy.keys()) {
-                expandedCopy.set(key, true);
-            }
-        } else if (id === -1) {
-            for (const key of expandedCopy.keys()) {
-                expandedCopy.set(key, false);
-            }
-        } else {
-            const key = id.toString();
-            expandedCopy.set(key, !expanded.get(key));
+    function renderTableBody() {
+        const list = editMode ? editableExpenses : expenses;
+        if (groupMode === "none") {
+            return list.map((expense) => renderExpenseRow(expense, false));
         }
-        setExpanded(expandedCopy);
+
+        const groups = groupExpenses(list, groupMode);
+        return groups.map((group, index) => {
+            const isOpen = expanded.get(group.key) !== false;
+            const bg = index % 2 === 0;
+            const countLabel = group.items.length === 1 ? "1 item" : `${group.items.length} items`;
+            return (
+                <React.Fragment key={`group-${group.key}-${index}`}>
+                    <TableRow className="cursor-pointer" onClick={() => toggleGroup(group.key)}>
+                        <TableCell className={`${bg ? "bg-muted/40" : ""} font-semibold`} colSpan={7}>
+                            {group.key || "(Blank)"}{" "}
+                            <span className="font-normal text-muted-foreground">({countLabel})</span>{" "}
+                            {isOpen ? <ChevronUp className="inline h-4 w-4" /> : <ChevronRight className="inline h-4 w-4" />}
+                        </TableCell>
+                    </TableRow>
+                    {isOpen ? group.items.map((expense) => renderExpenseRow(expense, bg)) : null}
+                </React.Fragment>
+            );
+        });
     }
+
+    const selectClassName = "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
     return (
-        <>
+        <div className="min-h-screen bg-background pb-20">
             <Header />
-            <Container fluid className="mt-4 px-5">
-                <Row className='align-items-center'>
-                    <Col className="fs-1" >
-                        <div>Expenses</div>
-                    </Col>
-                    <Col className='d-flex flex-nowrap justify-content-end'>
-                        <Button className="me-2" onClick={handleShow} variant="outline-dark">Add</Button>
-                        <Button variant="outline-dark me-2">Import</Button>
-                        <Button className={editMode || editId != null ? "d-none" : ""} variant="outline-dark me-2" onClick={() => { setEditMode(true); setEditableExpenses(expenses); }}>Edit</Button>
-                        <Button className={editMode || editId != null ? "" : "d-none"} variant="outline-dark me-2" onClick={EditExpenses}>Save</Button>
-                        <Button className={editMode || editId != null ? "" : "d-none"} variant="outline-dark me-2" onClick={() => { setEditMode(false); setEditId(null); setEditableExpenses(expenses); }}>Cancel</Button>
-                        <Button variant="outline-dark" onClick={DeleteExpenses}>Delete</Button>
-                    </Col>
-                </Row>
-                <Row className='align-items-center mt-3 mb-4'>
-                    <Col>
-                        <Stack direction="horizontal">
-                            <div className="me-2 fs-">Group By:</div>
-                            <Dropdown className="me-3" data-bs-theme="light">
-                                <Dropdown.Toggle id="groupBy" variant="outline-dark">
-                                    {groupMode[0].toUpperCase() + groupMode.slice(1)}
-                                </Dropdown.Toggle>
-                                <Dropdown.Menu>
-                                    <Dropdown.Item onClick={() => { getExpenses(); setGroupMode("none"); setExpanded(new Map) }}>None</Dropdown.Item>
-                                    <Dropdown.Item onClick={() => { sortBy("date"); setGroupMode("date"); populateExpanded(); }}>Date</Dropdown.Item>
-                                    <Dropdown.Item onClick={() => { sortBy("account"); setGroupMode("account"); populateExpanded(); }}>Account</Dropdown.Item>
-                                    <Dropdown.Item onClick={() => { sortBy("vendor"); setGroupMode("vendor"); populateExpanded(); }}>Vendor</Dropdown.Item>
-                                    <Dropdown.Item onClick={() => { sortBy("amount"); setGroupMode("amount"); populateExpanded(); }}>Amount</Dropdown.Item>
-                                    <Dropdown.Item onClick={() => { sortBy("category"); setGroupMode("category"); populateExpanded(); }}>Category</Dropdown.Item>
-                                </Dropdown.Menu>
-                            </Dropdown>
-                            {groupMode !== "none" ?
-                                <>
-                                    <Button className="me-2" variant="outline-dark" onClick={() => { updateExpanded(1) }}>Expand All</Button>
-                                    <Button variant="outline-dark" onClick={() => { updateExpanded(-1) }}>Collapse All</Button>
-                                </>
-                                : ""
-                            }
+            <main className="space-y-6 px-8 py-6">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                    <h1 className="text-4xl font-semibold tracking-tight">Expenses</h1>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".csv,text/csv"
+                            className="hidden"
+                            onChange={handleCsvFile}
+                        />
+                        <Button type="button" onClick={handleShow}>Add</Button>
+                        <Button variant="outline" onClick={() => setShowImport(true)}>Import</Button>
+                        {editMode || editId != null ? (
+                            <>
+                                <Button variant="outline" onClick={EditExpenses}>Save</Button>
+                                <Button variant="outline" onClick={() => { setEditMode(false); setEditId(null); setEditableExpenses(expenses); }}>Cancel</Button>
+                            </>
+                        ) : (
+                            <Button variant="outline" onClick={() => { setEditMode(true); setEditableExpenses(expenses); }}>Edit</Button>
+                        )}
+                        <Button variant="destructive" onClick={DeleteExpenses}>Delete</Button>
+                    </div>
+                </div>
 
-                        </Stack>
-                    </Col >
-                    <Col className='ms-auto my-auto text-end'>
-                        <InputGroup>
-                            <InputGroup.Text id="searchIcon"><Search /></InputGroup.Text>
-                            <Form.Control
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm text-muted-foreground">Group By:</span>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="outline">
+                                    {groupMode[0].toUpperCase() + groupMode.slice(1)}
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                                <DropdownMenuItem onClick={() => handleGroupBy("none")}>None</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleGroupBy("date")}>Date</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleGroupBy("account")}>Account</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleGroupBy("vendor")}>Vendor</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleGroupBy("amount")}>Amount</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleGroupBy("category")}>Category</DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                        {groupMode !== "none" &&
+                            <>
+                                <Button variant="outline" onClick={() => setAllExpanded(true)}>Expand All</Button>
+                                <Button variant="outline" onClick={() => setAllExpanded(false)}>Collapse All</Button>
+                            </>
+                        }
+                    </div>
+                    <div className="flex min-w-[280px] items-center gap-2">
+                        <div className="relative flex-1">
+                            <Search className="absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                                className="pl-8"
                                 placeholder="Search"
                                 aria-label="Search"
-                                aria-describedby="searchIcon"
                                 onChange={(e) => { setSearchByQuery(e.target.value); filterBySearch(searchBySelect, e.target.value) }}
                             />
-                            <Dropdown data-bs-theme="light">
-                                <Dropdown.Toggle id="searchBy" variant="outline-secondary">
+                        </div>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="outline">
                                     {searchBySelect[0].toUpperCase() + searchBySelect.slice(1)}
-                                </Dropdown.Toggle>
-                                <Dropdown.Menu>
-                                    <Dropdown.Item onClick={() => { setSearchBySelect("date"); filterBySearch("date", searchByQuery) }}>Date</Dropdown.Item>
-                                    <Dropdown.Item onClick={() => { setSearchBySelect("account"); filterBySearch("account", searchByQuery) }}>Account</Dropdown.Item>
-                                    <Dropdown.Item onClick={() => { setSearchBySelect("vendor"); filterBySearch("vendor", searchByQuery) }}>Vendor</Dropdown.Item>
-                                    <Dropdown.Item onClick={() => { setSearchBySelect("amount"); filterBySearch("amount", searchByQuery) }}>Amount</Dropdown.Item>
-                                    <Dropdown.Item onClick={() => { setSearchBySelect("category"); filterBySearch("category", searchByQuery) }}>Category</Dropdown.Item>
-                                    <Dropdown.Item onClick={() => { setSearchBySelect("notes"); filterBySearch("notes", searchByQuery) }}>Notes</Dropdown.Item>
-                                </Dropdown.Menu>
-                            </Dropdown>
-                        </InputGroup>
-                    </Col>
-                </Row>
-                <Row>
-                    <Form>
-                        <Table bordered hover>
-                            <thead>
-                                <tr>
-                                    <th className='text-center bg-light'><Form.Check onChange={handleCheckAll} /></th>
-                                    <th className='bg-light'>{sortDate == "down" ? <SortUp onClick={() => { sortBy("date", sortDate); setSortDate("up") }} /> : <SortDown onClick={() => { sortBy("date", sortDate); setSortDate("down") }} />}Date</th>
-                                    <th className='bg-light'>{sortAccount == "down" ? <SortAlphaUp onClick={() => { sortBy("account", sortAccount); setSortAccount("up") }} /> : <SortAlphaDown onClick={() => { sortBy("account", sortAccount); setSortAccount("down") }} />}Account</th>
-                                    <th className='bg-light'>{sortVendor == "down" ? <SortAlphaUp onClick={() => { sortBy("vendor", sortVendor); setSortVendor("up") }} /> : <SortAlphaDown onClick={() => { sortBy("vendor", sortVendor); setSortVendor("down") }} />}Vendor</th>
-                                    <th className='bg-light'>{sortAmount == "down" ? <SortAlphaUp onClick={() => { sortBy("amount", sortAmount); setSortAmount("up") }} /> : <SortAlphaDown onClick={() => { sortBy("amount", sortAmount); setSortAmount("down") }} />}Amount</th>
-                                    <th className='bg-light'>{sortCategory == "down" ? <SortNumericUp onClick={() => { sortBy("category", sortCategory); setSortCategory("up") }} /> : <SortNumericDown onClick={() => { sortBy("category", sortCategory); setSortCategory("down") }} />}Category</th>
-                                    <th className='bg-light'>{sortNotes == "down" ? <SortAlphaUp onClick={() => { sortBy("notes", sortNotes); setSortNotes("up") }} /> : <SortAlphaDown onClick={() => { sortBy("notes", sortNotes); setSortNotes("down") }} />}Notes</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {
-                                    editMode ? (
-                                        editableExpenses?.map((expense: Expense, index) => {
-                                            if (groupMode === "none") lightBg = false;
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                                <DropdownMenuItem onClick={() => { setSearchBySelect("date"); filterBySearch("date", searchByQuery) }}>Date</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => { setSearchBySelect("account"); filterBySearch("account", searchByQuery) }}>Account</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => { setSearchBySelect("vendor"); filterBySearch("vendor", searchByQuery) }}>Vendor</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => { setSearchBySelect("amount"); filterBySearch("amount", searchByQuery) }}>Amount</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => { setSearchBySelect("category"); filterBySearch("category", searchByQuery) }}>Category</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => { setSearchBySelect("notes"); filterBySearch("notes", searchByQuery) }}>Notes</DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </div>
+                </div>
 
-                                            const generateGroupRow = (label: string) => (
-                                                <React.Fragment key={`group-${label}-${index}`}>
-                                                    <tr>
-                                                        <td onClick={() => { updateExpanded(expense._id) }} className={lightBg ? "bg-light" : ""} colSpan={7}>
-                                                            {label}&nbsp;
-                                                            {expanded.get(expense._id.toString()) ? <ChevronUp /> : <ChevronRight />}
-                                                        </td>
-                                                    </tr>
-                                                    {expanded.get(expense._id.toString()) ? renderRow() : ""}
-                                                </React.Fragment>
-                                            );
+                <div className="rounded-xl border bg-card">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead className="w-10 text-center">
+                                    <Checkbox
+                                        checked={expenses.length > 0 && checkedExps.length === expenses.length}
+                                        onCheckedChange={(checked) => handleCheckAll(checked === true)}
+                                    />
+                                </TableHead>
+                                <TableHead>
+                                    <button className="inline-flex items-center gap-1" type="button" onClick={() => { sortBy("date", sortDate); setSortDate(sortDate === "down" ? "up" : "down") }}>
+                                        {sortDate === "down" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />}Date
+                                    </button>
+                                </TableHead>
+                                <TableHead>
+                                    <button className="inline-flex items-center gap-1" type="button" onClick={() => { sortBy("account", sortAccount); setSortAccount(sortAccount === "down" ? "up" : "down") }}>
+                                        {sortAccount === "down" ? <ArrowUpAZ className="h-4 w-4" /> : <ArrowDownAZ className="h-4 w-4" />}Account
+                                    </button>
+                                </TableHead>
+                                <TableHead>
+                                    <button className="inline-flex items-center gap-1" type="button" onClick={() => { sortBy("vendor", sortVendor); setSortVendor(sortVendor === "down" ? "up" : "down") }}>
+                                        {sortVendor === "down" ? <ArrowUpAZ className="h-4 w-4" /> : <ArrowDownAZ className="h-4 w-4" />}Vendor
+                                    </button>
+                                </TableHead>
+                                <TableHead>
+                                    <button className="inline-flex items-center gap-1" type="button" onClick={() => { sortBy("amount", sortAmount); setSortAmount(sortAmount === "down" ? "up" : "down") }}>
+                                        {sortAmount === "down" ? <ArrowUp01 className="h-4 w-4" /> : <ArrowDown01 className="h-4 w-4" />}Amount
+                                    </button>
+                                </TableHead>
+                                <TableHead>
+                                    <button className="inline-flex items-center gap-1" type="button" onClick={() => { sortBy("category", sortCategory); setSortCategory(sortCategory === "down" ? "up" : "down") }}>
+                                        {sortCategory === "down" ? <ArrowUpAZ className="h-4 w-4" /> : <ArrowDownAZ className="h-4 w-4" />}Category
+                                    </button>
+                                </TableHead>
+                                <TableHead>
+                                    <button className="inline-flex items-center gap-1" type="button" onClick={() => { sortBy("notes", sortNotes); setSortNotes(sortNotes === "down" ? "up" : "down") }}>
+                                        {sortNotes === "down" ? <ArrowUpAZ className="h-4 w-4" /> : <ArrowDownAZ className="h-4 w-4" />}Notes
+                                    </button>
+                                </TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {renderTableBody()}
+                        </TableBody>
+                    </Table>
+                </div>
 
-                                            const renderGroup = (currentGroup: string) => {
-                                                if (prevGroup !== currentGroup) {
-                                                    prevGroup = currentGroup;
-                                                    lightBg = !lightBg;
-                                                    return true;
-                                                }
-                                                return false;
-                                            };
+                {groupMode === "none" &&
+                    <ExpensePagination
+                        currentPage={currentPage}
+                        perPage={perPage}
+                        setCurrentPage={setCurrentPage}
+                        totalExpenses={expensesCopy.length}
+                        getExpenses={getExpenses} />
+                }
+            </main>
 
-                                            const renderRow = () => (
-                                                <ExpenseEditableRow
-                                                    key={`editable-${expense._id}`}
-                                                    expense={expense}
-                                                    checkedExps={checkedExps}
-                                                    handleCheck={handleCheck}
-                                                    bg={lightBg}
-                                                    editDate={editDate}
-                                                    editAccount={editAccount}
-                                                    editVendor={editVendor}
-                                                    editAmount={editAmount}
-                                                    editCategory={editCategory}
-                                                    editNotes={editNotes}
-                                                />
-                                            );
+            <Dialog open={showForm} onOpenChange={(open) => { if (!open) handleClose(); }}>
+                <DialogContent>
+                    <form onSubmit={AddExpense}>
+                        <DialogHeader>
+                            <DialogTitle>Add An Expense</DialogTitle>
+                        </DialogHeader>
+                        <div className="grid gap-3 py-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="date">Date</Label>
+                                <Input
+                                    required
+                                    id="date"
+                                    value={formatDate(date)}
+                                    type="date"
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDate(new Date(Date.parse(e.target.value)))}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="account">Account</Label>
+                                <select required className={selectClassName} id="account" onChange={handleAccount} value={accSelect}>
+                                    <option value="">Select or Add an Account</option>
+                                    {[...new Set(expenses?.map((expense: Expense) => expense.account))].map((account: string) => (
+                                        <option key={account} value={accCounter++}>{account}</option>
+                                    ))}
+                                    <option value="-1">New Account</option>
+                                </select>
+                            </div>
+                            {showAcc &&
+                                <Input
+                                    required
+                                    type="text"
+                                    value={newAccount}
+                                    aria-label="newAccount"
+                                    placeholder="New account name"
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setAccount(e.target.value); setNewAccount(e.target.value) }}
+                                />
+                            }
+                            <div className="space-y-2">
+                                <Label htmlFor="vendor">Vendor</Label>
+                                <Input
+                                    required
+                                    id="vendor"
+                                    type="text"
+                                    value={vendor}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setVendor(e.target.value)}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="amount">Amount</Label>
+                                <Input
+                                    required
+                                    id="amount"
+                                    type="number"
+                                    value={amount != 0 ? amount : ""}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(Number(e.target.value))}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="category">Category</Label>
+                                <select required className={selectClassName} id="category" onChange={handleCategory} value={catSelect}>
+                                    <option value="">Select or Add a Category</option>
+                                    {[...new Set(expenses?.map((expense: Expense) => expense.category))].map((category: string) => (
+                                        <option key={category} value={category}>{category}</option>
+                                    ))}
+                                    <option value="-1">*New Category*</option>
+                                </select>
+                            </div>
+                            {showCat &&
+                                <Input
+                                    required
+                                    type="text"
+                                    value={newCategory}
+                                    aria-label="newCategory"
+                                    placeholder="New category name"
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setCategory(e.target.value); setNewCategory(e.target.value) }}
+                                />
+                            }
+                            <div className="space-y-2">
+                                <Label htmlFor="notes">Notes</Label>
+                                <Textarea
+                                    id="notes"
+                                    value={notes}
+                                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                        <DialogFooter>
+                            <Button type="button" variant="outline" onClick={handleClose}>Close</Button>
+                            <Button type="submit">Add</Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
 
-                                            if (groupMode === "date" && renderGroup(formatDate(expense.date))) {
-                                                return generateGroupRow(formatDate(expense.date));
-                                            } else if (groupMode === "account" && renderGroup(expense.account)) {
-                                                return generateGroupRow(expense.account);
-                                            } else if (groupMode === "vendor" && renderGroup(expense.vendor)) {
-                                                return generateGroupRow(expense.vendor);
-                                            } else if (groupMode === "amount" && renderGroup(expense.amount.toString())) {
-                                                return generateGroupRow(expense.amount.toString());
-                                            } else if (groupMode === "category" && renderGroup(expense.category)) {
-                                                return generateGroupRow(expense.category);
-                                            } else {
-                                                return renderRow();
-                                            }
-                                        })
-                                    ) : (
-                                        expenses?.map((expense: Expense, index) => {
-                                            let exp: undefined | Expense;
-                                            if (groupMode === "none") lightBg = false;
-
-                                            if (editId === expense._id) {
-                                                exp = editableExpenses.find(e => e._id === expense._id);
-                                            }
-
-                                            const renderRow = () => (
-                                                exp && editId === expense._id ? (
-                                                    <ExpenseEditableRow
-                                                        key={`editable-${exp._id}`}
-                                                        expense={exp}
-                                                        checkedExps={checkedExps}
-                                                        handleCheck={handleCheck}
-                                                        bg={lightBg}
-                                                        editDate={editDate}
-                                                        editAccount={editAccount}
-                                                        editVendor={editVendor}
-                                                        editAmount={editAmount}
-                                                        editCategory={editCategory}
-                                                        editNotes={editNotes}
-                                                    />
-                                                ) : (
-                                                    <ExpenseRow
-                                                        key={`row-${expense._id}`}
-                                                        expense={expense}
-                                                        checkedExps={checkedExps}
-                                                        handleCheck={handleCheck}
-                                                        handleDbClickEdit={handleDbClickEdit}
-                                                        bg={lightBg}
-                                                    />
-                                                )
-                                            );
-
-                                            const generateGroupRow = (label: string) => (
-                                                <React.Fragment key={`group-${label}-${index}`}>
-                                                    <tr>
-                                                        <td onClick={() => { updateExpanded(expense._id) }} className={lightBg ? "bg-light" : ""} colSpan={7}>
-                                                            {label}&nbsp;
-                                                            {expanded.get(expense._id.toString()) ? <ChevronUp /> : <ChevronRight />}
-                                                        </td>
-                                                    </tr>
-                                                    {expanded.get(expense._id.toString()) ? renderRow() : ""}
-                                                </React.Fragment>
-                                            );
-
-                                            const renderGroup = (currentGroup: string) => {
-                                                if (prevGroup !== currentGroup) {
-                                                    prevGroup = currentGroup;
-                                                    lightBg = !lightBg;
-                                                    return true;
-                                                }
-                                                return false;
-                                            };
-
-                                            if (groupMode === "date" && renderGroup(formatDate(expense.date))) {
-                                                return generateGroupRow(formatDate(expense.date));
-                                            } else if (groupMode === "account" && renderGroup(expense.account)) {
-                                                return generateGroupRow(expense.account);
-                                            } else if (groupMode === "vendor" && renderGroup(expense.vendor)) {
-                                                return generateGroupRow(expense.vendor);
-                                            } else if (groupMode === "amount" && renderGroup(expense.amount.toString())) {
-                                                return generateGroupRow(expense.amount.toString());
-                                            } else if (groupMode === "category" && renderGroup(expense.category)) {
-                                                return generateGroupRow(expense.category);
-                                            } else {
-                                                return renderRow();
-                                            }
-                                        })
-                                    )
+            <Dialog open={showImport} onOpenChange={(open) => { if (!open) closeImport(); }}>
+                <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Import CSV</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        {!csvResult &&
+                            <FileUpload
+                                acceptedFileTypes={[".csv", "text/csv"]}
+                                uploadDelay={0}
+                                onUploadSuccess={(file) => {
+                                    const reader = new FileReader();
+                                    reader.onload = () => {
+                                        try {
+                                            const result = parseExpenseCsv(String(reader.result || ""));
+                                            const accounts = [...new Set(expensesCopy.map((expense) => expense.account).filter(Boolean))];
+                                            setCsvResult(result);
+                                            setImportAccount(accounts[0] || "");
+                                            setImportCategory("Uncategorized");
+                                            setImportError("");
+                                        } catch (err) {
+                                            alert(err instanceof Error ? err.message : "Could not read that CSV file.");
+                                        }
+                                    };
+                                    reader.readAsText(file);
+                                }}
+                            />
+                        }
+                        {csvResult &&
+                            <>
+                                <p className="text-sm text-muted-foreground">
+                                    Found {csvResult.expenses.length} expense{csvResult.expenses.length === 1 ? "" : "s"}
+                                    {csvResult.skipped > 0 ? ` (${csvResult.skipped} row${csvResult.skipped === 1 ? "" : "s"} skipped)` : ""}.
+                                </p>
+                                {!csvResult.hasAccount &&
+                                    <div className="space-y-2">
+                                        <Label htmlFor="importAccount">Account</Label>
+                                        <Input
+                                            required
+                                            id="importAccount"
+                                            type="text"
+                                            value={importAccount}
+                                            placeholder="e.g. MBNA"
+                                            onChange={(e) => setImportAccount(e.target.value)}
+                                        />
+                                    </div>
                                 }
-                            </tbody >
-                        </Table>
-                    </Form>
-                </Row>
-
-                <ExpensePagination
-                    currentPage={currentPage}
-                    perPage={perPage}
-                    setCurrentPage={setCurrentPage}
-                    totalExpenses={expensesCopy.length}
-                    getExpenses={getExpenses} />
-            </Container >
-
-            {/* Add Expense Form */}
-            < Modal show={showForm} onHide={handleClose} centered >
-                <Form onSubmit={AddExpense}>
-                    <Modal.Header closeButton>
-                        <Modal.Title>Add An Expense</Modal.Title>
-                    </Modal.Header>
-                    <Modal.Body>
-                        <InputGroup className="mb-3">
-                            <InputGroup.Text id="date">Date</InputGroup.Text>
-                            <Form.Control
-                                required
-                                value={formatDate(date)}
-                                type="date"
-                                aria-label="date"
-                                aria-describedby="date"
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDate(new Date(Date.parse(e.target.value)))}
-                            />
-                        </InputGroup>
-                        <Form.Select required onChange={handleAccount} value={accSelect}
-                            aria-label="Default select example" className="mb-3">
-                            <option value="">Select or Add an Account</option>
-                            {[...new Set(expenses?.map((expense: Expense) => expense.account))].map((account: string) => (
-                                <option key={account} value={accCounter++} > {account}</option>
-                            ))}
-                            <option value="-1">New Account</option>
-                        </Form.Select>
-                        <InputGroup className={showAcc ? "mb-3" : "mb-3 d-none"}>
-                            <InputGroup.Text id="account">Account</InputGroup.Text>
-                            <Form.Control
-                                required={showAcc}
-                                type="text"
-                                value={newAccount}
-                                aria-label="newAccount"
-                                aria-describedby="newAccount"
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setAccount(e.target.value); setNewAccount(e.target.value) }}
-                            />
-                        </InputGroup>
-                        <InputGroup className="mb-3">
-                            <InputGroup.Text id="vendor">Vendor</InputGroup.Text>
-                            <Form.Control
-                                required
-                                type="text"
-                                value={vendor}
-                                aria-label="vendor"
-                                aria-describedby="vendor"
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setVendor(e.target.value)}
-                            />
-                        </InputGroup>
-                        <InputGroup className="mb-3">
-                            <InputGroup.Text id="amount">Amount</InputGroup.Text>
-                            <Form.Control
-                                required
-                                type="number"
-                                value={amount != 0 ? amount : ""}
-                                aria-label="amount"
-                                aria-describedby="amount"
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(Number(e.target.value))}
-                            />
-                        </InputGroup>
-                        <Form.Select required onChange={handleCategory} value={catSelect}
-                            aria-label="Default select example" className="mb-3">
-                            <option value="">Select or Add a Category</option>
-                            {[...new Set(expenses?.map((expense: Expense) => expense.category))].map((category: string) => (
-                                <option key={category} value={category}>{category}</option>
-                            ))}
-                            <option value="-1">*New Category*</option>
-                        </Form.Select>
-                        <InputGroup className={showCat ? "mb-3" : "mb-3 d-none"}>
-                            <InputGroup.Text id="category">Category</InputGroup.Text>
-                            <Form.Control
-                                required={showCat}
-                                type="text"
-                                value={newCategory}
-                                aria-label="newCategory"
-                                aria-describedby="newCategory"
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setCategory(e.target.value); setNewCategory(e.target.value) }}
-                            />
-                        </InputGroup>
-                        <InputGroup className="mb-3">
-                            <InputGroup.Text>Notes</InputGroup.Text>
-                            <Form.Control as="textarea" aria-label="textarea"
-                                value={notes}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNotes(e.target.value)}
-                            />
-                        </InputGroup>
-                    </Modal.Body >
-                    <Modal.Footer>
-                        <Button variant="outline-dark" onClick={handleClose}>
-                            Close
-                        </Button>
-                        <Button variant="dark" type="submit">
-                            Add
-                        </Button>
-                    </Modal.Footer>
-                </Form>
-            </Modal >
-        </>
+                                {!csvResult.hasCategory &&
+                                    <div className="space-y-2">
+                                        <Label htmlFor="importCategory">Category</Label>
+                                        <Input
+                                            id="importCategory"
+                                            type="text"
+                                            value={importCategory}
+                                            onChange={(e) => setImportCategory(e.target.value)}
+                                        />
+                                    </div>
+                                }
+                                <div className="max-h-80 overflow-auto rounded-md border">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead>Date</TableHead>
+                                                <TableHead>Account</TableHead>
+                                                <TableHead>Vendor</TableHead>
+                                                <TableHead>Amount</TableHead>
+                                                <TableHead>Category</TableHead>
+                                                <TableHead>Notes</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {csvResult.expenses.slice(0, 8).map((expense, index) => (
+                                                <TableRow key={`preview-${index}`}>
+                                                    <TableCell>{formatDate(expense.date)}</TableCell>
+                                                    <TableCell>{expense.account || importAccount || "—"}</TableCell>
+                                                    <TableCell>{expense.vendor}</TableCell>
+                                                    <TableCell>{expense.amount}</TableCell>
+                                                    <TableCell>{expense.category || importCategory || "—"}</TableCell>
+                                                    <TableCell>{expense.notes || ""}</TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                                {csvResult.expenses.length > 8 &&
+                                    <p className="text-sm text-muted-foreground">Showing the first 8 of {csvResult.expenses.length} rows.</p>
+                                }
+                                {importError && <p className="text-sm text-destructive">{importError}</p>}
+                            </>
+                        }
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" disabled={importing} onClick={closeImport}>Cancel</Button>
+                        {csvResult &&
+                            <Button disabled={importing} type="button" onClick={ImportExpenses}>
+                                {importing ? "Importing..." : "Import"}
+                            </Button>
+                        }
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </div>
     )
 }
 
@@ -731,7 +967,7 @@ const Expenses = () => {
 interface EditableExpenseRowProps {
     expense: Expense,
     checkedExps: string[],
-    handleCheck: (e: React.ChangeEvent<HTMLInputElement>) => void,
+    handleCheck: (id: string, checked: boolean) => void,
     editDate: (expense: Expense, d: string) => void,
     editAccount: (expense: Expense, a: string) => void,
     editVendor: (expense: Expense, v: string) => void,
@@ -741,39 +977,52 @@ interface EditableExpenseRowProps {
     bg: boolean
 }
 
-// editable expense table row component
 function ExpenseEditableRow({ expense, checkedExps, handleCheck, editDate, editAccount, editVendor, editAmount, editCategory, editNotes, bg }: EditableExpenseRowProps) {
-    let bgClr = bg ? "bg-light" : "";
-    return (<tr key={expense._id.toString()}>
-        <td className={bgClr}><Form.Check checked={checkedExps.includes(expense._id.toString())} id={expense._id.toString()} className='text-center' onChange={handleCheck} /></td>
-        <td className={bgClr}><Form.Control type="date" size="sm" value={formatDate(expense.date)} onChange={(e) => { editDate(expense, e.target.value) }} /></td>
-        <td className={bgClr}><Form.Control type="text" size="sm" value={expense.account} onChange={(e) => { editAccount(expense, e.target.value) }} /></td>
-        <td className={bgClr}><Form.Control type="text" size="sm" value={expense.vendor} onChange={(e) => { editVendor(expense, e.target.value) }} /></td>
-        <td className={bgClr}><Form.Control type="number" size="sm" value={expense.amount} onChange={(e) => { editAmount(expense, Number(e.target.value)) }} /></td>
-        <td className={bgClr}><Form.Control type="text" size="sm" value={expense.category} onChange={(e) => { editCategory(expense, e.target.value) }} /></td>
-        <td className={bgClr}><Form.Control type="text" size="sm" value={expense.notes ? expense.notes : ""} onChange={(e) => { editNotes(expense, e.target.value) }} /></td>
-    </tr>)
+    const bgClr = bg ? "bg-muted/40" : "";
+    return (
+        <TableRow key={expense._id.toString()} className={bgClr}>
+            <TableCell>
+                <Checkbox
+                    checked={checkedExps.includes(expense._id.toString())}
+                    onCheckedChange={(checked) => handleCheck(expense._id.toString(), checked === true)}
+                />
+            </TableCell>
+            <TableCell><Input className="h-8" type="date" value={formatDate(expense.date)} onChange={(e) => { editDate(expense, e.target.value) }} /></TableCell>
+            <TableCell><Input className="h-8" type="text" value={expense.account} onChange={(e) => { editAccount(expense, e.target.value) }} /></TableCell>
+            <TableCell><Input className="h-8" type="text" value={expense.vendor} onChange={(e) => { editVendor(expense, e.target.value) }} /></TableCell>
+            <TableCell><Input className="h-8" type="number" value={expense.amount} onChange={(e) => { editAmount(expense, Number(e.target.value)) }} /></TableCell>
+            <TableCell><Input className="h-8" type="text" value={expense.category} onChange={(e) => { editCategory(expense, e.target.value) }} /></TableCell>
+            <TableCell><Input className="h-8" type="text" value={expense.notes ? expense.notes : ""} onChange={(e) => { editNotes(expense, e.target.value) }} /></TableCell>
+        </TableRow>
+    )
 }
 
 interface ExpenseRowProps {
     expense: Expense,
     checkedExps: string[],
-    handleCheck: (e: React.ChangeEvent<HTMLInputElement>) => void,
+    handleCheck: (id: string, checked: boolean) => void,
     handleDbClickEdit: (id: string) => void,
     bg: boolean
 }
 
 function ExpenseRow({ expense, checkedExps, handleCheck, handleDbClickEdit, bg }: ExpenseRowProps) {
-    let bgClr = bg ? "bg-light" : "";
-    return (<tr key={expense._id.toString()} onDoubleClick={() => { handleDbClickEdit(expense._id) }} >
-        <td className={bgClr}><Form.Check checked={checkedExps.includes(expense._id.toString())} id={expense._id.toString()} className='text-center' onChange={handleCheck} /></td>
-        <td className={bgClr}>{formatDate(expense.date)}</td>
-        <td className={bgClr}>{expense.account}</td>
-        <td className={bgClr}>{expense.vendor}</td>
-        <td className={bgClr}>{expense.amount}</td>
-        <td className={bgClr}>{expense.category}</td>
-        <td className={bgClr}>{expense.notes ? expense.notes : ""}</td>
-    </tr>)
+    const bgClr = bg ? "bg-muted/40" : "";
+    return (
+        <TableRow className={bgClr} onDoubleClick={() => { handleDbClickEdit(expense._id) }}>
+            <TableCell>
+                <Checkbox
+                    checked={checkedExps.includes(expense._id.toString())}
+                    onCheckedChange={(checked) => handleCheck(expense._id.toString(), checked === true)}
+                />
+            </TableCell>
+            <TableCell>{formatDate(expense.date)}</TableCell>
+            <TableCell>{expense.account}</TableCell>
+            <TableCell>{expense.vendor}</TableCell>
+            <TableCell>{expense.amount}</TableCell>
+            <TableCell>{expense.category}</TableCell>
+            <TableCell>{expense.notes ? expense.notes : ""}</TableCell>
+        </TableRow>
+    )
 }
 
 interface ExpensePaginationProps {
@@ -794,22 +1043,35 @@ function ExpensePagination({ currentPage, setCurrentPage, perPage, totalExpenses
         }
     }
 
+    if (pageNumbers.length <= 1) return null;
+
     return (
-        pageNumbers.length > 1 &&
-        <Pagination className='mb-4 position-fixed bottom-0 start-50 translate-middle-x'>
-            <Pagination.First disabled={currentPage === 1} onClick={() => { setCurrentPage(1); getExpenses(true, 1) }} />
-            <Pagination.Prev disabled={currentPage === 1} onClick={() => { setCurrentPage(currentPage - 1); getExpenses(true, currentPage - 1) }} />
+        <div className="fixed bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full border bg-card/95 p-1 shadow-lg backdrop-blur">
+            <Button disabled={currentPage === 1} size="icon-sm" variant="ghost" onClick={() => { setCurrentPage(1); getExpenses(true, 1) }}>
+                <ChevronsLeft />
+            </Button>
+            <Button disabled={currentPage === 1} size="icon-sm" variant="ghost" onClick={() => { setCurrentPage(currentPage - 1); getExpenses(true, currentPage - 1) }}>
+                <ChevronLeft />
+            </Button>
             {pageNumbers.map((number, index) => (
                 <React.Fragment key={number}>
-                    {index > 0 && number - pageNumbers[index - 1] > 1 && <Pagination.Ellipsis />}
-                    <Pagination.Item active={number === currentPage} onClick={() => { setCurrentPage(number); getExpenses(true, number) }}>
+                    {index > 0 && number - pageNumbers[index - 1] > 1 && <span className="px-1 text-muted-foreground">…</span>}
+                    <Button
+                        size="icon-sm"
+                        variant={number === currentPage ? "default" : "ghost"}
+                        onClick={() => { setCurrentPage(number); getExpenses(true, number) }}
+                    >
                         {number}
-                    </Pagination.Item>
+                    </Button>
                 </React.Fragment>
             ))}
-            <Pagination.Next disabled={currentPage === totalPages} onClick={() => { setCurrentPage(currentPage + 1); getExpenses(true, currentPage + 1) }} />
-            <Pagination.Last disabled={currentPage === totalPages} onClick={() => { setCurrentPage(totalPages); getExpenses(true, totalPages) }} />
-        </Pagination>
+            <Button disabled={currentPage === totalPages} size="icon-sm" variant="ghost" onClick={() => { setCurrentPage(currentPage + 1); getExpenses(true, currentPage + 1) }}>
+                <ChevronRight />
+            </Button>
+            <Button disabled={currentPage === totalPages} size="icon-sm" variant="ghost" onClick={() => { setCurrentPage(totalPages); getExpenses(true, totalPages) }}>
+                <ChevronsRight />
+            </Button>
+        </div>
     );
 }
 

@@ -3,7 +3,6 @@ import App from "./App.tsx";
 import { BrowserRouter } from "react-router-dom";
 import { ClerkProvider } from "@clerk/react";
 import { AxiosAuthBridge } from "./components/AxiosAuthBridge";
-import "bootstrap/dist/css/bootstrap.min.css";
 
 import "./index.css";
 

@@ -1,41 +1,35 @@
-import Stack from "react-bootstrap/Stack";
-import Nav from "react-bootstrap/Nav";
-import Dropdown from "react-bootstrap/Dropdown";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Show, UserButton, useUser } from "@clerk/react";
+import ShimmerText from "@/components/kokonutui/shimmer-text";
+import { Button } from "@/components/ui/button";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 
 function DropDowns() {
     return (
-        <Stack className="" direction="horizontal" gap={3}>
-            <Dropdown data-bs-theme="dark">
-                <Dropdown.Toggle id="dropdown-button-dark-example1" variant="dark">
-                    Select An Account
-                </Dropdown.Toggle>
-                <Dropdown.Menu>
-                    <Dropdown.Item href="#/action-1" active>
-                        Action
-                    </Dropdown.Item>
-                    <Dropdown.Item href="#/action-2">Another action</Dropdown.Item>
-                    <Dropdown.Item href="#/action-3">Something else</Dropdown.Item>
-                    <Dropdown.Divider />
-                    <Dropdown.Item href="#/action-4">Separated link</Dropdown.Item>
-                </Dropdown.Menu>
-            </Dropdown>
-            <Dropdown data-bs-theme="dark">
-                <Dropdown.Toggle id="Date" variant="dark">
-                    Date Range
-                </Dropdown.Toggle>
-                <Dropdown.Menu>
-                    <Dropdown.Item href="#/action-1" active>
-                        Action
-                    </Dropdown.Item>
-                    <Dropdown.Item href="#/action-2">Another action</Dropdown.Item>
-                    <Dropdown.Item href="#/action-3">Something else</Dropdown.Item>
-                    <Dropdown.Divider />
-                    <Dropdown.Item href="#/action-4">Separated link</Dropdown.Item>
-                </Dropdown.Menu>
-            </Dropdown>
-        </Stack>
+        <div className="flex flex-wrap gap-3">
+            <Select>
+                <SelectTrigger className="w-[180px] bg-white">
+                    <SelectValue placeholder="Select An Account" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All accounts</SelectItem>
+                </SelectContent>
+            </Select>
+            <Select>
+                <SelectTrigger className="w-[180px] bg-white">
+                    <SelectValue placeholder="Date Range" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All dates</SelectItem>
+                </SelectContent>
+            </Select>
+        </div>
     );
 }
 
@@ -47,28 +41,30 @@ export const Header = () => {
 
     return (
         <>
-            <Stack className="ps-5 py-3 bg-black text-white" direction="horizontal" gap={4}>
-                <div className="fs-2">TrackSense</div>
-                <Nav className="fs-6 mt-2" activeKey="/home">
-                    <Nav.Item>
-                        <Nav.Link onClick={() => navigate("/expenses")}>Expenses</Nav.Link>
-                    </Nav.Item>
-                </Nav>
-                <Nav className="fs-6 ms-auto me-4 mt-1 d-flex align-items-center">
+            <header className="flex items-center gap-6 bg-black px-8 py-4 text-white">
+                <ShimmerText className="text-2xl from-white via-neutral-400 to-white" text="TrackSense" wrapperClassName="p-0" />
+                <nav className="flex items-center gap-2 text-sm">
+                    <Button className="text-white hover:bg-white/10 hover:text-white" variant="ghost" onClick={() => navigate("/expenses")}>
+                        Expenses
+                    </Button>
+                </nav>
+                <div className="ml-auto">
                     <Show when="signed-in">
                         <UserButton />
                     </Show>
-                </Nav>
-            </Stack>
-            <Stack className="bg-slate flex flex-col py-5 ps-5 gap={1}">
-                <div className="fs-xl pb-1">{newUser ? "Welcome to TrackSense!" : "Welcome Back!"}</div>
+                </div>
+            </header>
+            <section className="bg-muted/60 px-8 py-8">
+                <h1 className="text-4xl font-semibold tracking-tight md:text-5xl">
+                    {newUser ? "Welcome to TrackSense!" : "Welcome Back!"}
+                </h1>
                 {user?.firstName ? (
-                    <div className="fs-5 ms-1">Hello, {user.firstName} {user.lastName}</div>
+                    <p className="mt-2 text-lg text-muted-foreground">Hello, {user.firstName} {user.lastName}</p>
                 ) : null}
-                <div className="flex flex-row gap-x-3 pt-4">
+                <div className="pt-6">
                     <DropDowns />
                 </div>
-            </Stack>
+            </section>
         </>
     );
 };
