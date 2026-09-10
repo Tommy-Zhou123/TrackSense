@@ -33,3 +33,23 @@ export interface CsvInspection {
 }
 
 export type DateOrder = "mdy" | "dmy";
+
+export type ImportSource = "csv" | "pdf";
+
+export type ImportStep = "map" | "preview" | "categories";
+
+export interface StatementParseRow {
+    date: string;
+    account?: string;
+    vendor: string;
+    amount: number;
+    category?: string;
+    notes?: string;
+}
+
+export interface StatementParseResponse {
+    expenses: StatementParseRow[];
+    skipped: number;
+    warnings: string[];
+    hasAccount: boolean;
+}

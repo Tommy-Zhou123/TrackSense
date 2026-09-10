@@ -8,6 +8,7 @@ export function mapExpense(row) {
 		amount: Number(row.amount),
 		notes: row.notes ?? "",
 		user: row.user_id,
+		assignedMemberId: row.assigned_member_id || null,
 	};
 }
 

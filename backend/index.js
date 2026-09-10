@@ -6,6 +6,9 @@ import { PORT, frontendOrigins } from "./config.js";
 import { ipLimiter, userLimiter, rejectBotlikeRequests } from "./lib/rateLimit.js";
 
 import expenseRoute from "./routes/expenseRoute.js";
+import vendorRuleRoute from "./routes/vendorRuleRoute.js";
+import overarchingCategoryRoute from "./routes/overarchingCategoryRoute.js";
+import profileRoute from "./routes/profileRoute.js";
 import userRoute from "./routes/userRoute.js";
 
 const app = express();
@@ -33,7 +36,11 @@ app.use(
 app.use("/api", userLimiter);
 
 app.use("/api", userRoute);
+app.use("/api/profiles", profileRoute);
 app.use("/api/expenses", expenseRoute);
+app.use("/api/vendor-rules", vendorRuleRoute);
+app.use("/api/overarching-categories", overarchingCategoryRoute);
+app.use("/api/category-groups", overarchingCategoryRoute);
 
 if (!process.env.VERCEL) {
 	app.listen(PORT, () => {

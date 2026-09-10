@@ -6,7 +6,7 @@ export const supabaseUrl = process.env.SUPABASE_URL;
 export const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 export const geminiApiKey = process.env.GEMINI_API_KEY || "";
-export const geminiModel = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+export const geminiModel = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 
 function withHttps(host) {
 	if (!host) return null;

@@ -1,6 +1,9 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "@clerk/react";
 import Expenses from "./pages/Expenses.tsx";
+import Graphs from "./pages/Graphs.tsx";
+import Categories from "./pages/Categories.tsx";
+import Profile from "./pages/Profile.tsx";
 import LoginPage from "./pages/Login.tsx";
 import RegistrationPage from "./pages/Register.tsx";
 import { ProtectedRoute } from "./components/ProtectedRoute";
@@ -20,6 +23,30 @@ function App() {
         element={
           <ProtectedRoute>
             <Expenses />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/graphs"
+        element={
+          <ProtectedRoute>
+            <Graphs />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/categories"
+        element={
+          <ProtectedRoute>
+            <Categories />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/profile"
+        element={
+          <ProtectedRoute>
+            <Profile />
           </ProtectedRoute>
         }
       />

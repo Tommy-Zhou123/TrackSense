@@ -67,7 +67,7 @@ export const parseStatementLimiter = rateLimit({
 export const MAX_IMPORT_ROWS = 1000;
 export const MAX_PDF_BYTES = 12 * 1024 * 1024;
 export const MAX_PDF_PAGES = 20;
-export const GEMINI_TIMEOUT_MS = 50000;
+export const GEMINI_TIMEOUT_MS = process.env.VERCEL ? 45_000 : 90_000;
 
 export function rejectBotlikeRequests(req, res, next) {
 	if (req.method === "OPTIONS") {

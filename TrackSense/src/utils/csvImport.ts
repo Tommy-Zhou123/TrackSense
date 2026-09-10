@@ -194,6 +194,13 @@ export function suggestColumnMapping(headers: string[]): ColumnMapping {
     };
 }
 
+export function reuseExistingCategory(value: string, existing: string[]): string {
+    const trimmed = String(value || "").replace(/\s+/g, " ").trim();
+    if (!trimmed) return "";
+    const match = existing.find((name) => name.trim().toLowerCase() === trimmed.toLowerCase());
+    return match?.trim() || trimmed;
+}
+
 export function mappingError(mapping: ColumnMapping): string {
     if (mapping.date === UNMAPPED) return "Map a Date column.";
     if (mapping.vendor === UNMAPPED) return "Map a Vendor / Description column.";
@@ -304,7 +311,7 @@ export function applyColumnMapping(inspection: CsvInspection, mapping: ColumnMap
             account: cell(row, mapping.account),
             vendor,
             amount,
-            category: cell(row, mapping.category),
+            category: cell(row, mapping.category).replace(/\s+/g, " ").trim(),
             notes: cell(row, mapping.notes),
         });
     }

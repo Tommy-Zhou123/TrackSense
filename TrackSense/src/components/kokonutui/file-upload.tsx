@@ -495,10 +495,9 @@ export default function FileUpload({
                       </h3>
                       <p className="text-gray-500 text-xs dark:text-gray-400">
                         {acceptedFileTypes?.length
-                          ? `${acceptedFileTypes
-                              .map((t) => t.split("/")[1])
-                              .join(", ")
-                              .toUpperCase()}`
+                          ? `${[...new Set(acceptedFileTypes.map((t) => (
+                              t.startsWith(".") ? t.slice(1) : t.includes("/") ? t.split("/").pop() || t : t
+                            )))].join(", ").toUpperCase()}`
                           : "SVG, PNG, JPG or GIF"}{" "}
                         {maxFileSize && `up to ${formatBytes(maxFileSize)}`}
                       </p>

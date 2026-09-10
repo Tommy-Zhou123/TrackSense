@@ -3,6 +3,8 @@ import App from "./App.tsx";
 import { BrowserRouter } from "react-router-dom";
 import { ClerkProvider } from "@clerk/react";
 import { AxiosAuthBridge } from "./components/AxiosAuthBridge";
+import { AppFeedbackProvider } from "./components/AppFeedback";
+import { ProfileProvider } from "./components/ProfileProvider";
 
 import "./index.css";
 
@@ -21,7 +23,11 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   >
     <BrowserRouter>
       <AxiosAuthBridge>
-        <App />
+        <AppFeedbackProvider>
+          <ProfileProvider>
+            <App />
+          </ProfileProvider>
+        </AppFeedbackProvider>
       </AxiosAuthBridge>
     </BrowserRouter>
   </ClerkProvider>

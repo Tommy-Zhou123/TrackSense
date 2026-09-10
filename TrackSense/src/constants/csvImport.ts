@@ -9,7 +9,7 @@ export const COLUMN_FIELDS: ColumnFieldConfig[] = [
     { key: "debit", label: "Debit" },
     { key: "credit", label: "Credit" },
     { key: "account", label: "Account" },
-    { key: "category", label: "Category" },
+    { key: "category", label: "Category", hint: "Applied automatically, then you can edit" },
     { key: "notes", label: "Notes" },
 ];
 
@@ -55,7 +55,23 @@ export const AMOUNT_HEADERS = [
 
 export const DEBIT_HEADERS = ["debit", "withdrawal", "withdrawals", "charge", "money out"];
 export const CREDIT_HEADERS = ["credit", "deposit", "deposits", "payment", "money in"];
-export const CATEGORY_HEADERS = ["expense category", "category", "type"];
+export const CATEGORY_HEADERS = [
+    "expense category",
+    "transaction category",
+    "spending category",
+    "spend category",
+    "budget category",
+    "category name",
+    "category",
+    "classification",
+    "expense type",
+    "labels",
+    "label",
+    "tags",
+    "tag",
+    "class",
+    "type",
+];
 export const NOTES_HEADERS = ["description 2", "notes", "memo", "comment", "reference", "details"];
 export const EXACT_ONLY_ALIASES = new Set(["name", "type", "details", "total", "value", "card"]);
 

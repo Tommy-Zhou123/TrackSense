@@ -1,16 +1,61 @@
 import express from "express";
-import { isLoggedIn } from "../middleware.js";
+import multer from "multer";
+import { isLoggedIn, requireProfile, requireProfileWrite } from "../middleware.js";
 import { supabase } from "../lib/supabase.js";
 import { mapExpense, toDateValue } from "../lib/expense.js";
+import { activeMemberOnProfile } from "../lib/profile.js";
+import { geminiApiKey } from "../config.js";
+import { maskPan, parseStatementPdf } from "../lib/statementParse.js";
 import {
 	writeLimiter,
 	importLimiter,
+	parseStatementLimiter,
 	MAX_IMPORT_ROWS,
+	MAX_PDF_BYTES,
 } from "../lib/rateLimit.js";
+
+const uploadPdf = multer({
+	storage: multer.memoryStorage(),
+	limits: { fileSize: MAX_PDF_BYTES, files: 1 },
+	fileFilter(_req, file, cb) {
+		const name = (file.originalname || "").toLowerCase();
+		const type = (file.mimetype || "").toLowerCase();
+		if (type === "application/pdf" || name.endsWith(".pdf")) {
+			cb(null, true);
+			return;
+		}
+		cb(new Error("Only PDF files are accepted"));
+	},
+}).single("file");
+
+function acceptPdfUpload(req, res, next) {
+	uploadPdf(req, res, (err) => {
+		if (!err) return next();
+		if (err.code === "LIMIT_FILE_SIZE") {
+			return res.status(413).send({
+				message: "PDF must be 12MB or smaller",
+			});
+		}
+		return res.status(400).send({
+			message: maskPan(err.message) || "Could not upload file",
+		});
+	});
+}
+
+async function resolveAssignedMemberId(profileId, value) {
+	if (value == null || value === "" || value === "split") return null;
+	const member = await activeMemberOnProfile(profileId, value);
+	if (!member) {
+		const error = new Error("That person is not on this profile");
+		error.status = 400;
+		throw error;
+	}
+	return member.id;
+}
 
 const router = express.Router();
 
-router.post("/add", isLoggedIn, writeLimiter, async (req, res) => {
+router.post("/add", isLoggedIn, requireProfile, requireProfileWrite, writeLimiter, async (req, res) => {
 	try {
 		const date = toDateValue(req.body.date);
 		if (
@@ -20,6 +65,10 @@ router.post("/add", isLoggedIn, writeLimiter, async (req, res) => {
 			req.body.account &&
 			req.body.category
 		) {
+			const assignedMemberId = await resolveAssignedMemberId(
+				req.profileId,
+				req.body.assignedMemberId
+			);
 			const { data, error } = await supabase
 				.from("expenses")
 				.insert({
@@ -30,6 +79,8 @@ router.post("/add", isLoggedIn, writeLimiter, async (req, res) => {
 					category: req.body.category,
 					notes: req.body.notes || "",
 					user_id: req.userId,
+					profile_id: req.profileId,
+					assigned_member_id: assignedMemberId,
 				})
 				.select()
 				.single();
@@ -40,12 +91,15 @@ router.post("/add", isLoggedIn, writeLimiter, async (req, res) => {
 
 		res.status(400).send({ message: "All fields are required!" });
 	} catch (err) {
-		console.log(err.message);
+		if (err.status) {
+			return res.status(err.status).send({ message: err.message });
+		}
+		console.log(maskPan(err.message));
 		res.status(500).send({ message: err.message });
 	}
 });
 
-router.post("/import", isLoggedIn, importLimiter, async (req, res) => {
+router.post("/import", isLoggedIn, requireProfile, requireProfileWrite, importLimiter, async (req, res) => {
 	try {
 		const rows = req.body.expenses;
 		if (!Array.isArray(rows) || rows.length === 0) {
@@ -78,6 +132,8 @@ router.post("/import", isLoggedIn, importLimiter, async (req, res) => {
 				category: row.category,
 				notes: row.notes || "",
 				user_id: req.userId,
+				profile_id: req.profileId,
+				assigned_member_id: null,
 			});
 		}
 
@@ -94,17 +150,49 @@ router.post("/import", isLoggedIn, importLimiter, async (req, res) => {
 		const created = (data || []).map(mapExpense);
 		return res.status(201).send({ count: created.length, expenses: created });
 	} catch (err) {
-		console.log(err.message);
+		console.log(maskPan(err.message));
 		res.status(500).send({ message: err.message });
 	}
 });
 
-router.get("/", isLoggedIn, async (req, res) => {
+router.post(
+	"/parse-statement",
+	isLoggedIn,
+	requireProfile,
+	requireProfileWrite,
+	parseStatementLimiter,
+	acceptPdfUpload,
+	async (req, res) => {
+		try {
+			if (!geminiApiKey) {
+				return res.status(503).send({
+					message: "Statement parsing is not configured",
+				});
+			}
+			if (!req.file?.buffer?.length) {
+				return res.status(400).send({ message: "Upload a PDF statement" });
+			}
+
+			const result = await parseStatementPdf(req.file.buffer);
+			return res.status(200).send(result);
+		} catch (err) {
+			console.log(maskPan(err.message));
+			const status = err.status || 500;
+			return res.status(status).send({
+				message: maskPan(err.message) || "Could not parse statement",
+			});
+		} finally {
+			if (req.file) req.file.buffer = null;
+		}
+	}
+);
+
+router.get("/", isLoggedIn, requireProfile, async (req, res) => {
 	try {
 		const { data, error } = await supabase
 			.from("expenses")
 			.select("*")
-			.eq("user_id", req.userId)
+			.eq("profile_id", req.profileId)
 			.order("date", { ascending: false });
 
 		if (error) throw error;
@@ -114,19 +202,19 @@ router.get("/", isLoggedIn, async (req, res) => {
 			expenses,
 		});
 	} catch (err) {
-		console.log(err.message);
+		console.log(maskPan(err.message));
 		res.status(500).send({ message: err.message });
 	}
 });
 
-router.get("/:id", isLoggedIn, async (req, res) => {
+router.get("/:id", isLoggedIn, requireProfile, async (req, res) => {
 	try {
 		const { id } = req.params;
 		const { data, error } = await supabase
 			.from("expenses")
 			.select("*")
 			.eq("id", id)
-			.eq("user_id", req.userId)
+			.eq("profile_id", req.profileId)
 			.maybeSingle();
 
 		if (error) throw error;
@@ -135,12 +223,12 @@ router.get("/:id", isLoggedIn, async (req, res) => {
 		}
 		return res.status(200).json(mapExpense(data));
 	} catch (err) {
-		console.log(err.message);
+		console.log(maskPan(err.message));
 		res.status(500).send({ message: err.message });
 	}
 });
 
-router.put("/:id", isLoggedIn, writeLimiter, async (req, res) => {
+router.put("/:id", isLoggedIn, requireProfile, requireProfileWrite, writeLimiter, async (req, res) => {
 	try {
 		if (
 			!req.body.date ||
@@ -152,6 +240,10 @@ router.put("/:id", isLoggedIn, writeLimiter, async (req, res) => {
 			return res.status(400).send({ message: "All fields are required!" });
 		}
 
+		const assignedMemberId = await resolveAssignedMemberId(
+			req.profileId,
+			req.body.assignedMemberId
+		);
 		const { id } = req.params;
 		const { data, error } = await supabase
 			.from("expenses")
@@ -162,9 +254,10 @@ router.put("/:id", isLoggedIn, writeLimiter, async (req, res) => {
 				amount: req.body.amount,
 				category: req.body.category,
 				notes: req.body.notes || "",
+				assigned_member_id: assignedMemberId,
 			})
 			.eq("id", id)
-			.eq("user_id", req.userId)
+			.eq("profile_id", req.profileId)
 			.select("id")
 			.maybeSingle();
 
@@ -174,19 +267,22 @@ router.put("/:id", isLoggedIn, writeLimiter, async (req, res) => {
 		}
 		return res.status(200).send({ message: "Expense updated successfully!" });
 	} catch (err) {
-		console.log(err.message);
+		if (err.status) {
+			return res.status(err.status).send({ message: err.message });
+		}
+		console.log(maskPan(err.message));
 		res.status(500).send({ message: err.message });
 	}
 });
 
-router.delete("/:id", isLoggedIn, writeLimiter, async (req, res) => {
+router.delete("/:id", isLoggedIn, requireProfile, requireProfileWrite, writeLimiter, async (req, res) => {
 	try {
 		const { id } = req.params;
 		const { data, error } = await supabase
 			.from("expenses")
 			.delete()
 			.eq("id", id)
-			.eq("user_id", req.userId)
+			.eq("profile_id", req.profileId)
 			.select("id")
 			.maybeSingle();
 
@@ -198,7 +294,7 @@ router.delete("/:id", isLoggedIn, writeLimiter, async (req, res) => {
 			.status(200)
 			.send({ _id: id, message: "Expense deleted successfully!" });
 	} catch (err) {
-		console.log(err.message);
+		console.log(maskPan(err.message));
 		res.status(500).send({ message: err.message });
 	}
 });
