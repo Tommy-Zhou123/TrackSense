@@ -19,4 +19,5 @@ export interface ProfileMember {
   userId: string | null;
   invitedBy: string | null;
   createdAt: string;
+  splitPercent: number;
 }

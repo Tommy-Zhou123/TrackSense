@@ -11,14 +11,17 @@ import {
 	inviteToProfile,
 	isUuid,
 	isValidEmail,
+	listActiveMembers,
 	listActiveProfiles,
 	listMembers,
 	loadActiveMembership,
 	loadClerkUser,
 	loadMembershipById,
 	loadProfile,
+	mapMember,
 	maybeRevokeClerkInvitation,
 	normalizeEmail,
+	onActiveMembershipChanged,
 	primaryEmail,
 	syncMemberEmails,
 	userEmails,
@@ -146,6 +149,65 @@ router.get("/:id/members", isLoggedIn, async (req, res) => {
 	}
 });
 
+router.put("/:id/split", isLoggedIn, writeLimiter, async (req, res) => {
+	try {
+		const owner = await requireOwnerMembership(req, res);
+		if (!owner) return;
+
+		const shares = req.body.shares;
+		if (!Array.isArray(shares) || shares.length === 0) {
+			return res.status(400).send({ message: "Split shares are required" });
+		}
+
+		const active = await listActiveMembers(req.params.id);
+		if (active.length === 0) {
+			return res.status(400).send({ message: "This profile has no people to split with" });
+		}
+
+		const remaining = new Map(active.map((member) => [member.id, member]));
+		const parsed = [];
+		for (const share of shares) {
+			const memberId = share.memberId || share.id;
+			const percent = Number(share.percent);
+			if (!remaining.has(memberId) || !Number.isFinite(percent) || percent < 0 || percent > 100) {
+				return res.status(400).send({
+					message: "Each split percent must be between 0 and 100",
+				});
+			}
+			parsed.push({
+				id: memberId,
+				splitPercent: Math.round(percent * 1000) / 1000,
+			});
+			remaining.delete(memberId);
+		}
+		if (remaining.size > 0) {
+			return res.status(400).send({
+				message: "Include a percent for each person on this profile",
+			});
+		}
+
+		const total = parsed.reduce((sum, share) => sum + share.splitPercent, 0);
+		if (Math.abs(total - 100) > 0.05) {
+			return res.status(400).send({ message: "Split percents must add up to 100" });
+		}
+
+		for (const share of parsed) {
+			const { error } = await supabase
+				.from("profile_members")
+				.update({ split_percent: share.splitPercent })
+				.eq("id", share.id)
+				.eq("profile_id", req.params.id);
+			if (error) throw error;
+		}
+
+		const members = await listMembers(req.params.id);
+		return res.status(200).json({ members });
+	} catch (err) {
+		console.log(err.message);
+		res.status(500).send({ message: err.message });
+	}
+});
+
 router.post("/:id/invites", isLoggedIn, writeLimiter, async (req, res) => {
 	try {
 		const owner = await requireOwnerMembership(req, res);
@@ -212,19 +274,11 @@ router.patch("/:id/members/:memberId", isLoggedIn, writeLimiter, async (req, res
 			.eq("id", memberId)
 			.eq("profile_id", id)
 			.select(
-				"id, profile_id, role, status, email, user_id, invited_by, clerk_invitation_id, created_at"
+				"id, profile_id, role, status, email, user_id, invited_by, clerk_invitation_id, created_at, split_percent"
 			)
 			.maybeSingle();
 		if (error) throw error;
-		return res.status(200).send({
-			id: data.id,
-			email: data.email,
-			role: data.role,
-			status: data.status,
-			userId: data.user_id || null,
-			invitedBy: data.invited_by || null,
-			createdAt: data.created_at,
-		});
+		return res.status(200).send(mapMember(data));
 	} catch (err) {
 		console.log(err.message);
 		res.status(500).send({ message: err.message });
@@ -272,6 +326,8 @@ router.delete("/:id/members/:memberId", isLoggedIn, writeLimiter, async (req, re
 
 		if (member.status === "invited") {
 			await maybeRevokeClerkInvitation(member.email, member.clerk_invitation_id);
+		} else {
+			await onActiveMembershipChanged(id);
 		}
 
 		return res.status(200).send({

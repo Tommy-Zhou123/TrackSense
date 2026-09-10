@@ -2,8 +2,8 @@ import express from "express";
 import multer from "multer";
 import { isLoggedIn, requireProfile, requireProfileWrite } from "../middleware.js";
 import { supabase } from "../lib/supabase.js";
-import { mapExpense, toDateValue } from "../lib/expense.js";
-import { activeMemberOnProfile } from "../lib/profile.js";
+import { mapExpense, toDateValue, isSplitAssignment } from "../lib/expense.js";
+import { activeMemberOnProfile, isUuid } from "../lib/profile.js";
 import { geminiApiKey } from "../config.js";
 import { maskPan, parseStatementPdf } from "../lib/statementParse.js";
 import {
@@ -43,7 +43,7 @@ function acceptPdfUpload(req, res, next) {
 }
 
 async function resolveAssignedMemberId(profileId, value) {
-	if (value == null || value === "" || value === "split") return null;
+	if (isSplitAssignment(value)) return null;
 	const member = await activeMemberOnProfile(profileId, value);
 	if (!member) {
 		const error = new Error("That person is not on this profile");
@@ -51,6 +51,27 @@ async function resolveAssignedMemberId(profileId, value) {
 		throw error;
 	}
 	return member.id;
+}
+
+function expenseFields(body) {
+	const date = toDateValue(body.date);
+	if (
+		!date ||
+		body.amount == null ||
+		!body.vendor ||
+		!body.account ||
+		!body.category
+	) {
+		return null;
+	}
+	return {
+		date,
+		account: body.account,
+		vendor: body.vendor,
+		amount: body.amount,
+		category: body.category,
+		notes: body.notes || "",
+	};
 }
 
 const router = express.Router();
@@ -228,15 +249,67 @@ router.get("/:id", isLoggedIn, requireProfile, async (req, res) => {
 	}
 });
 
+router.put("/batch", isLoggedIn, requireProfile, requireProfileWrite, writeLimiter, async (req, res) => {
+	try {
+		const rows = req.body.expenses;
+		if (!Array.isArray(rows) || rows.length === 0) {
+			return res.status(400).send({ message: "No expenses to update" });
+		}
+		if (rows.length > MAX_IMPORT_ROWS) {
+			return res.status(400).send({
+				message: `Update is limited to ${MAX_IMPORT_ROWS} expenses at a time`,
+			});
+		}
+
+		const updated = [];
+		for (const row of rows) {
+			const id = row._id || row.id;
+			const fields = expenseFields(row);
+			if (!isUuid(id) || !fields) {
+				const error = new Error("All fields are required!");
+				error.status = 400;
+				throw error;
+			}
+			const assignedMemberId = await resolveAssignedMemberId(
+				req.profileId,
+				row.assignedMemberId
+			);
+			const { data, error } = await supabase
+				.from("expenses")
+				.update({
+					...fields,
+					assigned_member_id: assignedMemberId,
+				})
+				.eq("id", id)
+				.eq("profile_id", req.profileId)
+				.select("id")
+				.maybeSingle();
+			if (error) throw error;
+			if (!data) {
+				const notFound = new Error("Expense not found");
+				notFound.status = 404;
+				throw notFound;
+			}
+			updated.push(data.id);
+		}
+
+		return res.status(200).send({
+			count: updated.length,
+			message: "Expenses updated successfully!",
+		});
+	} catch (err) {
+		if (err.status) {
+			return res.status(err.status).send({ message: err.message });
+		}
+		console.log(maskPan(err.message));
+		res.status(500).send({ message: err.message });
+	}
+});
+
 router.put("/:id", isLoggedIn, requireProfile, requireProfileWrite, writeLimiter, async (req, res) => {
 	try {
-		if (
-			!req.body.date ||
-			req.body.amount == null ||
-			!req.body.vendor ||
-			!req.body.account ||
-			!req.body.category
-		) {
+		const fields = expenseFields(req.body);
+		if (!fields) {
 			return res.status(400).send({ message: "All fields are required!" });
 		}
 
@@ -248,12 +321,7 @@ router.put("/:id", isLoggedIn, requireProfile, requireProfileWrite, writeLimiter
 		const { data, error } = await supabase
 			.from("expenses")
 			.update({
-				date: toDateValue(req.body.date),
-				account: req.body.account,
-				vendor: req.body.vendor,
-				amount: req.body.amount,
-				category: req.body.category,
-				notes: req.body.notes || "",
+				...fields,
 				assigned_member_id: assignedMemberId,
 			})
 			.eq("id", id)

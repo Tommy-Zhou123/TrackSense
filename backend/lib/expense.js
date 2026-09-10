@@ -1,3 +1,9 @@
+export function isSplitAssignment(value) {
+	if (value == null) return true;
+	const raw = String(value).trim().toLowerCase();
+	return raw === "" || raw === "null" || raw === "undefined" || raw.startsWith("split");
+}
+
 export function mapExpense(row) {
 	return {
 		_id: row.id,

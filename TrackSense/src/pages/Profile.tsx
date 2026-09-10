@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { ProfileMember, ProfileRole, ProfileSummary } from "@/types/profile";
+import { activePeople, defaultSplitPercents } from "@/utils/expenseAttribution";
 
 function memberLabel(member: ProfileMember, selfId?: string) {
     if (member.id === selfId) {
@@ -56,6 +57,7 @@ export default function Profile() {
     const [inviteEmail, setInviteEmail] = useState("");
     const [inviteRole, setInviteRole] = useState<"member" | "viewer">("member");
     const [inviting, setInviting] = useState(false);
+    const [splitDrafts, setSplitDrafts] = useState<Record<string, string>>({});
 
     useEffect(() => {
         setEditing(false);
@@ -82,9 +84,23 @@ export default function Profile() {
     }, [activeProfile?.id, navigate, reportError]);
 
     const myMember = members.find((member) => member.id === activeProfile?.memberId);
+    const splitMembers = activePeople(members);
+
+    function splitDraftsFrom(list: ProfileMember[]) {
+        const people = activePeople(list);
+        const sum = people.reduce((total, member) => total + Number(member.splitPercent || 0), 0);
+        const defaults = defaultSplitPercents(people.length);
+        return Object.fromEntries(
+            people.map((member, index) => [
+                member.id,
+                String(sum > 0 ? member.splitPercent : (defaults[index] ?? 0)),
+            ]),
+        );
+    }
 
     function enterEdit() {
         setNameDrafts(Object.fromEntries(profiles.map((profile) => [profile.id, profile.name])));
+        setSplitDrafts(splitDraftsFrom(members));
         setEditing(true);
         setError("");
     }
@@ -92,6 +108,49 @@ export default function Profile() {
     function exitEdit() {
         setEditing(false);
         setError("");
+    }
+
+    function applyEvenSplitDrafts() {
+        const defaults = defaultSplitPercents(splitMembers.length);
+        setSplitDrafts(Object.fromEntries(
+            splitMembers.map((member, index) => [member.id, String(defaults[index] ?? 0)]),
+        ));
+        setError("");
+    }
+
+    async function saveSplitPercents() {
+        if (!activeProfile || !isOwner) return true;
+        const shares = splitMembers.map((member) => ({
+            memberId: member.id,
+            percent: Number(splitDrafts[member.id]),
+        }));
+        if (shares.length === 0) return true;
+        if (shares.some((share) => !Number.isFinite(share.percent) || share.percent < 0 || share.percent > 100)) {
+            setError("Split percents must be between 0 and 100.");
+            return false;
+        }
+        const total = shares.reduce((sum, share) => sum + share.percent, 0);
+        if (Math.abs(total - 100) > 0.05) {
+            setError(`Split percents must add up to 100% (currently ${total.toFixed(2)}%).`);
+            return false;
+        }
+        setSaving(true);
+        try {
+            const response = await api.put(`/api/profiles/${activeProfile.id}/split`, { shares });
+            setMembers(response.data.members || members);
+            return true;
+        } catch (err) {
+            reportError(err);
+            return false;
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    async function finishEdit() {
+        const saved = await saveSplitPercents();
+        if (!saved) return;
+        exitEdit();
     }
 
     async function selectProfile(id: string) {
@@ -178,6 +237,12 @@ export default function Profile() {
                 role: inviteRole,
             });
             setMembers((current) => [...current, response.data.member]);
+            if (editing && response.data.member?.status === "active") {
+                setSplitDrafts((current) => ({
+                    ...current,
+                    [response.data.member.id]: String(response.data.member.splitPercent ?? 0),
+                }));
+            }
             setInviteEmail("");
             showSuccess(
                 response.data.invited
@@ -248,7 +313,7 @@ export default function Profile() {
                             Add
                         </Button>
                         {editing ? (
-                            <Button type="button" onClick={exitEdit} disabled={saving}>Done</Button>
+                            <Button type="button" onClick={finishEdit} disabled={saving}>Done</Button>
                         ) : (
                             <Button type="button" variant="outline" onClick={enterEdit}>
                                 <Pencil />
@@ -468,6 +533,64 @@ export default function Profile() {
                                             })}
                                         </ul>
                                     )}
+                                    {splitMembers.length > 0 ? (
+                                        <div className="space-y-3 border-t pt-4">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <h3 className="text-sm font-medium">Default split</h3>
+                                                {editing && isOwner ? (
+                                                    <Button type="button" variant="outline" size="xs" onClick={applyEvenSplitDrafts}>
+                                                        Even split
+                                                    </Button>
+                                                ) : null}
+                                            </div>
+                                            <p className="text-xs text-muted-foreground">
+                                                Unassigned expenses are divided by these percents. Default is 100% / {splitMembers.length} {splitMembers.length === 1 ? "person" : "people"}.
+                                            </p>
+                                            <ul className="space-y-1">
+                                                {splitMembers.map((member) => (
+                                                    <li key={`split-${member.id}`} className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5">
+                                                        <p className="min-w-0 flex-1 truncate text-sm">
+                                                            {memberLabel(member, activeProfile.memberId)}
+                                                        </p>
+                                                        {editing && isOwner ? (
+                                                            <div className="flex items-center gap-1">
+                                                                <Input
+                                                                    aria-label={`Split percent for ${member.email}`}
+                                                                    className="h-8 w-20 text-right"
+                                                                    type="number"
+                                                                    min={0}
+                                                                    max={100}
+                                                                    step={0.001}
+                                                                    value={splitDrafts[member.id] ?? String(member.splitPercent ?? 0)}
+                                                                    onChange={(event) =>
+                                                                        setSplitDrafts((current) => ({
+                                                                            ...current,
+                                                                            [member.id]: event.target.value,
+                                                                        }))
+                                                                    }
+                                                                />
+                                                                <span className="text-sm text-muted-foreground">%</span>
+                                                            </div>
+                                                        ) : (
+                                                            <p className="text-sm tabular-nums text-muted-foreground">
+                                                                {Number(member.splitPercent || 0).toLocaleString(undefined, { maximumFractionDigits: 3 })}%
+                                                            </p>
+                                                        )}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                            {editing && isOwner ? (
+                                                <p className={cn(
+                                                    "text-xs tabular-nums",
+                                                    Math.abs(splitMembers.reduce((sum, member) => sum + Number(splitDrafts[member.id] ?? member.splitPercent), 0) - 100) > 0.05
+                                                        ? "text-destructive"
+                                                        : "text-muted-foreground",
+                                                )}>
+                                                    Total {splitMembers.reduce((sum, member) => sum + Number(splitDrafts[member.id] ?? member.splitPercent), 0).toFixed(3)}%
+                                                </p>
+                                            ) : null}
+                                        </div>
+                                    ) : null}
                                 </div>
                             )}
                         </section>

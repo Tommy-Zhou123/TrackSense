@@ -98,6 +98,7 @@ import type { ProfileMember } from '@/types/profile';
 import {
     SPLIT_VALUE,
     attributionLabel,
+    isSplitAssignment,
     personLabel,
 } from '@/utils/expenseAttribution';
 
@@ -117,6 +118,7 @@ type ExpensePart = "none" | "date" | "account" | "vendor" | "amount" | "category
 
 
 const formatDate = (date: Date) => {
+    if (!date || Number.isNaN(date.getTime())) return "";
     return date.toISOString().split('T')[0];
 };
 
@@ -133,7 +135,9 @@ function getGroupKey(expense: Expense, mode: ExpensePart): string {
         case "category":
             return expense.category || "";
         case "person":
-            return expense.assignedMemberId || "split";
+            return expense.assignedMemberId && !isSplitAssignment(expense.assignedMemberId)
+                ? expense.assignedMemberId
+                : "split";
         case "notes":
             return expense.notes || "";
         default:
@@ -166,6 +170,32 @@ function groupExpenses(list: Expense[], mode: ExpensePart): { key: string; items
         }
     }
     return Array.from(groups, ([key, items]) => ({ key, items }));
+}
+
+function expensePayload(expense: Expense) {
+    return {
+        _id: expense._id,
+        date: formatDate(expense.date),
+        account: expense.account,
+        vendor: expense.vendor,
+        amount: Number(expense.amount),
+        category: expense.category,
+        notes: expense.notes || "",
+        assignedMemberId: isSplitAssignment(expense.assignedMemberId) ? null : expense.assignedMemberId,
+    };
+}
+
+function expenseChanged(next: Expense, prev?: Expense) {
+    if (!prev) return true;
+    const a = expensePayload(next);
+    const b = expensePayload(prev);
+    return a.date !== b.date
+        || a.account !== b.account
+        || a.vendor !== b.vendor
+        || a.amount !== b.amount
+        || a.category !== b.category
+        || a.notes !== b.notes
+        || a.assignedMemberId !== b.assignedMemberId;
 }
 
 function buildExpandedMap(list: Expense[], mode: ExpensePart, open: boolean): Map<string, boolean> {
@@ -523,33 +553,38 @@ const Expenses = () => {
         }
     }
 
-    function EditExpenses() {
-        let updatedExpenses: Expense[] = [...expenses];
-        let updatedExpensesCopy: Expense[] = [...expensesCopy];
-        editableExpenses.forEach(expense => {
-            api.put(`/api/expenses/${expense._id}`, expense)
-                .then(() => {
-                    updatedExpenses.forEach((exp, index) => {
-                        if (exp._id === expense._id) {
-                            updatedExpenses[index] = expense;
-                        }
-                    });
-                    setExpenses(updatedExpenses);
-
-                    updatedExpensesCopy.forEach((exp, index) => {
-                        if (exp._id === expense._id) {
-                            updatedExpensesCopy[index] = expense;
-                        }
-                    });
-                    setExpensesCopy(updatedExpensesCopy);
-                })
-                .catch((err) => {
-                    reportError(err);
-                })
-        });
-        setEditMode(false);
-        setEditId(null);
-        resetEditCategoryAdd();
+    async function EditExpenses() {
+        const originals = new Map(expensesCopy.map((item) => [item._id, item]));
+        const rows = editId
+            ? editableExpenses.filter((item) => item._id === editId)
+            : editableExpenses;
+        const changed = rows.filter((item) => expenseChanged(item, originals.get(item._id)));
+        if (changed.length === 0) {
+            setEditMode(false);
+            setEditId(null);
+            resetEditCategoryAdd();
+            return;
+        }
+        const payloads = changed.map(expensePayload);
+        if (payloads.some((item) => !item.date || item.amount == null || !item.vendor || !item.account || !item.category)) {
+            reportError();
+            return;
+        }
+        try {
+            await api.put("/api/expenses/batch", { expenses: payloads });
+            const byId = new Map(changed.map((item) => [
+                item._id,
+                { ...item, assignedMemberId: isSplitAssignment(item.assignedMemberId) ? null : item.assignedMemberId },
+            ]));
+            setExpenses((current) => current.map((item) => byId.get(item._id) || item));
+            setExpensesCopy((current) => current.map((item) => byId.get(item._id) || item));
+            setEditMode(false);
+            setEditId(null);
+            resetEditCategoryAdd();
+            showSuccess(changed.length === 1 ? "Expense saved." : "Expenses saved.");
+        } catch (err) {
+            reportError(err);
+        }
     }
 
     function closeImport() {
@@ -1302,8 +1337,8 @@ const Expenses = () => {
                         <Button variant="outline" onClick={() => setShowImport(true)}>Import</Button>
                         {editMode || editId != null ? (
                             <>
-                                <Button variant="outline" onClick={EditExpenses} disabled={editAddingCategoryId !== null}>Save</Button>
-                                <Button variant="outline" onClick={() => { setEditMode(false); setEditId(null); setEditableExpenses(expenses); resetEditCategoryAdd(); }}>Cancel</Button>
+                                <Button type="button" variant="outline" onClick={EditExpenses} disabled={editAddingCategoryId !== null}>Save</Button>
+                                <Button type="button" variant="outline" onClick={() => { setEditMode(false); setEditId(null); setEditableExpenses(expenses); resetEditCategoryAdd(); }}>Cancel</Button>
                             </>
                         ) : (
                             <Button variant="outline" onClick={() => { setEditMode(true); setEditableExpenses(expenses); resetEditCategoryAdd(); }}>Edit</Button>

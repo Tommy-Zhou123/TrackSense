@@ -2,6 +2,11 @@ import { clerkClient } from "@clerk/express";
 import { supabase } from "./supabase.js";
 import { frontendUrl } from "../config.js";
 import { isUniqueViolation } from "./overarchingCategory.js";
+import {
+	defaultSplitPercents,
+	isEvenSplit,
+	scalePercentsTo100,
+} from "./splitPercent.js";
 
 export const PROFILE_ROLES = new Set(["owner", "member", "viewer"]);
 export const INVITE_ROLES = new Set(["member", "viewer"]);
@@ -12,7 +17,7 @@ const UUID_RE =
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const MEMBER_SELECT =
-	"id, profile_id, role, status, email, user_id, invited_by, clerk_invitation_id, created_at";
+	"id, profile_id, role, status, email, user_id, invited_by, clerk_invitation_id, created_at, split_percent";
 
 export function isUuid(value) {
 	return UUID_RE.test(String(value || ""));
@@ -73,7 +78,58 @@ export function mapMember(row) {
 		userId: row.user_id || null,
 		invitedBy: row.invited_by || null,
 		createdAt: row.created_at,
+		splitPercent: Number(row.split_percent ?? 0),
 	};
+}
+
+async function writeSplitPercents(members) {
+	for (const member of members) {
+		const { error } = await supabase
+			.from("profile_members")
+			.update({ split_percent: member.splitPercent })
+			.eq("id", member.id);
+		if (error) throw error;
+	}
+}
+
+export async function setEvenSplitPercents(profileId) {
+	const active = await listActiveMembers(profileId);
+	const parts = defaultSplitPercents(active.length);
+	await writeSplitPercents(
+		active.map((member, index) => ({
+			id: member.id,
+			splitPercent: parts[index] ?? 0,
+		}))
+	);
+}
+
+export async function onActiveMembershipChanged(profileId, { addedMemberId } = {}) {
+	const active = await listActiveMembers(profileId);
+	if (addedMemberId) {
+		const others = active.filter((member) => member.id !== addedMemberId);
+		if (isEvenSplit(others.map((member) => member.splitPercent))) {
+			await setEvenSplitPercents(profileId);
+			return;
+		}
+		const { error } = await supabase
+			.from("profile_members")
+			.update({ split_percent: 0 })
+			.eq("id", addedMemberId)
+			.eq("profile_id", profileId);
+		if (error) throw error;
+		return;
+	}
+	if (isEvenSplit(active.map((member) => member.splitPercent))) {
+		await setEvenSplitPercents(profileId);
+		return;
+	}
+	const scaled = scalePercentsTo100(active.map((member) => member.splitPercent));
+	await writeSplitPercents(
+		active.map((member, index) => ({
+			id: member.id,
+			splitPercent: scaled[index] ?? 0,
+		}))
+	);
 }
 
 export async function loadActiveMembership(userId, profileId) {
@@ -158,13 +214,17 @@ export async function activeMemberOnProfile(profileId, memberId) {
 
 export async function activateInvitesForUser(userId, emails) {
 	if (!emails.length) return;
-	const { error } = await supabase
+	const { data, error } = await supabase
 		.from("profile_members")
 		.update({ status: "active", user_id: userId })
 		.in("email", emails)
 		.eq("status", "invited")
-		.is("user_id", null);
+		.is("user_id", null)
+		.select("id, profile_id");
 	if (error) throw error;
+	for (const row of data || []) {
+		await onActiveMembershipChanged(row.profile_id, { addedMemberId: row.id });
+	}
 }
 
 export async function syncMemberEmails(userId, email) {
@@ -199,6 +259,7 @@ export async function ensureDefaultProfile(userId, email) {
 		email: email || `${userId.toLowerCase()}@clerk.local`,
 		user_id: userId,
 		invited_by: userId,
+		split_percent: 100,
 	});
 	if (memberError) throw memberError;
 
@@ -225,6 +286,7 @@ export async function createProfile(userId, email, name) {
 			email: email || `${userId.toLowerCase()}@clerk.local`,
 			user_id: userId,
 			invited_by: userId,
+			split_percent: 100,
 		})
 		.select(MEMBER_SELECT)
 		.single();
@@ -240,6 +302,12 @@ async function findClerkUserByEmail(email) {
 	});
 	const users = result.data || result || [];
 	return users.find((user) => userEmails(user).includes(email)) || null;
+}
+
+async function completeActiveInvite(profileId, data) {
+	await onActiveMembershipChanged(profileId, { addedMemberId: data.id });
+	const row = await loadMembershipById(profileId, data.id);
+	return { member: mapMember(row || data), invited: false };
 }
 
 async function findPendingInvitation(email) {
@@ -301,6 +369,7 @@ export async function inviteToProfile({
 				email,
 				user_id: clerkUser.id,
 				invited_by: invitedBy,
+				split_percent: 0,
 			})
 			.select(MEMBER_SELECT)
 			.single();
@@ -312,7 +381,7 @@ export async function inviteToProfile({
 			}
 			throw error;
 		}
-		return { member: mapMember(data), invited: false };
+		return completeActiveInvite(profileId, data);
 	}
 
 	let invitation = await findPendingInvitation(email);
@@ -336,6 +405,7 @@ export async function inviteToProfile({
 						email,
 						user_id: clerkUser.id,
 						invited_by: invitedBy,
+						split_percent: 0,
 					})
 					.select(MEMBER_SELECT)
 					.single();
@@ -347,7 +417,7 @@ export async function inviteToProfile({
 					}
 					throw error;
 				}
-				return { member: mapMember(data), invited: false };
+				return completeActiveInvite(profileId, data);
 			}
 			throw err;
 		}
@@ -362,6 +432,7 @@ export async function inviteToProfile({
 			email,
 			invited_by: invitedBy,
 			clerk_invitation_id: invitation.id || null,
+			split_percent: 0,
 		})
 		.select(MEMBER_SELECT)
 		.single();
