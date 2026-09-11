@@ -20,6 +20,7 @@ import {
   useState,
 } from "react";
 import { cn } from "@/lib/utils";
+import { toAcceptedTypeExtension } from "@/utils/acceptedFileType";
 
 type FileStatus = "idle" | "dragging" | "uploading" | "error";
 
@@ -495,9 +496,7 @@ export default function FileUpload({
                       </h3>
                       <p className="text-gray-500 text-xs dark:text-gray-400">
                         {acceptedFileTypes?.length
-                          ? `${[...new Set(acceptedFileTypes.map((t) => (
-                              t.startsWith(".") ? t.slice(1) : t.includes("/") ? t.split("/").pop() || t : t
-                            )))].join(", ").toUpperCase()}`
+                          ? `${[...new Set(acceptedFileTypes.map(toAcceptedTypeExtension))].join(", ").toUpperCase()}`
                           : "SVG, PNG, JPG or GIF"}{" "}
                         {maxFileSize && `up to ${formatBytes(maxFileSize)}`}
                       </p>

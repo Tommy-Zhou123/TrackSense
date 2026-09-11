@@ -1,10 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
 import { Loader2, Pencil, Plus, X } from "lucide-react";
 import { Header } from "./Home";
 import { api } from "../lib/api";
 import { useAppFeedback } from "@/components/AppFeedback";
 import { useProfile } from "@/components/ProfileProvider";
+import { useWorkspace } from "@/components/WorkspaceProvider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,7 +35,6 @@ function memberLabel(member: ProfileMember, selfId?: string) {
 }
 
 export default function Profile() {
-    const navigate = useNavigate();
     const { reportError, showSuccess, confirm } = useAppFeedback();
     const {
         profiles,
@@ -45,8 +44,7 @@ export default function Profile() {
         refreshProfiles,
         createProfile,
     } = useProfile();
-    const [members, setMembers] = useState<ProfileMember[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { members, setMembers, loading } = useWorkspace();
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
     const [editing, setEditing] = useState(false);
@@ -64,24 +62,6 @@ export default function Profile() {
         setInviteEmail("");
         setError("");
     }, [activeProfile?.id]);
-
-    useEffect(() => {
-        if (!activeProfile?.id) return;
-        setLoading(true);
-        api.get(`/api/profiles/${activeProfile.id}/members`)
-            .then((response) => {
-                setMembers(response.data.members || []);
-            })
-            .catch((err) => {
-                setMembers([]);
-                if (err?.response?.status === 401) {
-                    navigate("/login");
-                } else {
-                    reportError(err);
-                }
-            })
-            .finally(() => setLoading(false));
-    }, [activeProfile?.id, navigate, reportError]);
 
     const myMember = members.find((member) => member.id === activeProfile?.memberId);
     const splitMembers = activePeople(members);

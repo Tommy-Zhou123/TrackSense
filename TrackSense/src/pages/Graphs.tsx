@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useMemo, useState } from "react";
 import { ChevronDown, Loader2 } from "lucide-react";
 import {
     Bar,
@@ -15,9 +14,8 @@ import {
     YAxis,
 } from "recharts";
 import { Header } from "./Home";
-import { api } from "../lib/api";
-import { useAppFeedback } from "@/components/AppFeedback";
 import { useProfile } from "@/components/ProfileProvider";
+import { useWorkspace } from "@/components/WorkspaceProvider";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -49,21 +47,8 @@ import {
 import {
     groupLookup,
     mapExpensesToGroups,
-    type CategoryGroup,
 } from "@/utils/categoryGroup";
 import { expensesByPerson } from "@/utils/expenseAttribution";
-import type { ProfileMember } from "@/types/profile";
-
-interface Expense {
-    _id: string;
-    date: Date;
-    account: string;
-    vendor: string;
-    category: string;
-    amount: number;
-    notes: string;
-    assignedMemberId: string | null;
-}
 
 type ChartView = "category" | "group" | "person";
 
@@ -165,13 +150,8 @@ function grainNoun(grain: PeriodGrain): string {
 }
 
 export default function Graphs() {
-    const navigate = useNavigate();
-    const { reportError } = useAppFeedback();
-    const { activeProfileId, activeProfile } = useProfile();
-    const [expenses, setExpenses] = useState<Expense[]>([]);
-    const [people, setPeople] = useState<ProfileMember[]>([]);
-    const [groups, setGroups] = useState<CategoryGroup[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { activeProfile } = useProfile();
+    const { expenses, groups, members: people, loading } = useWorkspace();
     const [deselected, setDeselected] = useState<Set<string>>(new Set());
     const [showCategories, setShowCategories] = useState(true);
     const [chartView, setChartView] = useState<ChartView>("category");
@@ -179,37 +159,6 @@ export default function Graphs() {
     const [barRange, setBarRange] = useState<DateKeyRange>(() => trailingPeriodRange("month"));
     const [pieGrain, setPieGrain] = useState<PeriodGrain>("month");
     const [pieRange, setPieRange] = useState<DateKeyRange>(() => currentPeriodRange("month"));
-
-    useEffect(() => {
-        if (!activeProfileId) return;
-        setLoading(true);
-        Promise.all([
-            api.get("/api/expenses"),
-            api.get("/api/category-groups").catch(() => ({ data: { groups: [] } })),
-            api.get(`/api/profiles/${activeProfileId}/members`).catch(() => ({ data: { members: [] } })),
-        ])
-            .then(([expenseResponse, groupResponse, memberResponse]) => {
-                const withDates: Expense[] = (expenseResponse.data.expenses || []).map((expense: Expense) => ({
-                    ...expense,
-                    date: new Date(expense.date),
-                    assignedMemberId: expense.assignedMemberId ?? null,
-                }));
-                setExpenses(withDates);
-                setGroups(groupResponse.data.groups || []);
-                setPeople(memberResponse.data.members || []);
-            })
-            .catch((err) => {
-                setExpenses([]);
-                setGroups([]);
-                setPeople([]);
-                if (err?.response?.data?.message === "Not Logged In" || err?.response?.status === 401) {
-                    navigate("/login");
-                } else {
-                    reportError(err);
-                }
-            })
-            .finally(() => setLoading(false));
-    }, [activeProfileId, navigate, reportError]);
 
     const lookup = useMemo(() => groupLookup(groups), [groups]);
     const chartExpenses = useMemo(() => {

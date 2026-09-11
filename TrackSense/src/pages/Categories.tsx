@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
 import { Loader2, Pencil, Plus, X } from "lucide-react";
 import { Header } from "./Home";
 import { api } from "../lib/api";
 import { useAppFeedback } from "@/components/AppFeedback";
 import { useProfile } from "@/components/ProfileProvider";
+import { useWorkspace } from "@/components/WorkspaceProvider";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -28,10 +28,6 @@ import {
 
 const GROUPS_API = "/api/category-groups";
 
-interface Expense {
-    category: string;
-}
-
 function namesMatch(a: string, b: string): boolean {
     return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
@@ -41,12 +37,9 @@ function linkableNames(names: Iterable<string>): string[] {
 }
 
 export default function Categories() {
-    const navigate = useNavigate();
     const { reportError, confirm } = useAppFeedback();
     const { canWrite, activeProfileId } = useProfile();
-    const [groups, setGroups] = useState<CategoryGroup[]>([]);
-    const [expenses, setExpenses] = useState<Expense[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { groups, setGroups, expenses, setExpenses, loading } = useWorkspace();
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
     const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -61,31 +54,17 @@ export default function Categories() {
     const [newCategoryName, setNewCategoryName] = useState("");
 
     useEffect(() => {
-        if (!activeProfileId) return;
-        setLoading(true);
         setSelectedId(null);
         setEditing(false);
-        Promise.all([
-            api.get(GROUPS_API),
-            api.get("/api/expenses"),
-        ])
-            .then(([groupResponse, expenseResponse]) => {
-                const nextGroups: CategoryGroup[] = groupResponse.data.groups || [];
-                setGroups(nextGroups);
-                setExpenses(expenseResponse.data.expenses || []);
-                setSelectedId((current) => current || nextGroups[0]?.id || null);
-            })
-            .catch((err) => {
-                setGroups([]);
-                setExpenses([]);
-                if (err?.response?.data?.message === "Not Logged In" || err?.response?.status === 401) {
-                    navigate("/login");
-                } else {
-                    reportError(err);
-                }
-            })
-            .finally(() => setLoading(false));
-    }, [activeProfileId, navigate, reportError]);
+        setError("");
+    }, [activeProfileId]);
+
+    useEffect(() => {
+        setSelectedId((current) => {
+            if (current && groups.some((group) => group.id === current)) return current;
+            return groups[0]?.id || null;
+        });
+    }, [groups]);
 
     const selected = groups.find((group) => group.id === selectedId) || null;
 

@@ -5,6 +5,7 @@ import { ClerkProvider } from "@clerk/react";
 import { AxiosAuthBridge } from "./components/AxiosAuthBridge";
 import { AppFeedbackProvider } from "./components/AppFeedback";
 import { ProfileProvider } from "./components/ProfileProvider";
+import { WorkspaceProvider } from "./components/WorkspaceProvider";
 
 import "./index.css";
 
@@ -25,7 +26,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <AxiosAuthBridge>
         <AppFeedbackProvider>
           <ProfileProvider>
-            <App />
+            <WorkspaceProvider>
+              <App />
+            </WorkspaceProvider>
           </ProfileProvider>
         </AppFeedbackProvider>
       </AxiosAuthBridge>
