@@ -17,6 +17,7 @@ export default defineConfig({
       "/api": {
         target: API_URL,
         changeOrigin: true,
+        timeout: 120_000,
       },
     },
   },

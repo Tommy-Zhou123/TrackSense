@@ -25,9 +25,9 @@ export const geminiModels = [
 ].filter((model, index, models) => models.indexOf(model) === index);
 
 export const groqApiKey = process.env.GROQ_API_KEY || "";
-export const groqModel = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
+export const groqModel = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 
-const DEFAULT_GROQ_FALLBACKS = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b"];
+const DEFAULT_GROQ_FALLBACKS = ["qwen/qwen3.8-27b"];
 
 export const groqModels = [
   groqModel,

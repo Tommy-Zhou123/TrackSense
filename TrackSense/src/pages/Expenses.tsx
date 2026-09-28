@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Header } from "./Home";
-import { api } from "../lib/api";
+import { api, parseStatementStream } from "../lib/api";
+import { useAuth } from "@clerk/react";
 import { cn } from "@/lib/utils";
 import { useAppFeedback } from "@/components/AppFeedback";
 import {
@@ -350,6 +351,7 @@ const Expenses = () => {
   const [newImportCategory, setNewImportCategory] = useState("");
   const [importing, setImporting] = useState(false);
   const [importParsing, setImportParsing] = useState(false);
+  const [importParseStatus, setImportParseStatus] = useState("");
   const [importError, setImportError] = useState("");
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
   const [importHasAccount, setImportHasAccount] = useState(true);
@@ -362,6 +364,7 @@ const Expenses = () => {
   const csvMappingError = columnMapping ? mappingError(columnMapping) : "";
 
   const { reportError, showSuccess, confirm } = useAppFeedback();
+  const { getToken } = useAuth();
   const { canWrite, activeProfileId, activeProfile } = useProfile();
   const {
     expenses: expensesCopy,
@@ -662,6 +665,7 @@ const Expenses = () => {
     setImportWarnings([]);
     setImportHasAccount(true);
     setImportParsing(false);
+    setImportParseStatus("");
   }
 
   function isPdfFile(file: File) {
@@ -739,16 +743,31 @@ const Expenses = () => {
 
   async function parsePdfStatement(file: File) {
     setImportParsing(true);
+    setImportParseStatus("Extracting text from the PDF...");
     setImportError("");
     setImportWarnings([]);
     setImportSource("pdf");
-    const form = new FormData();
-    form.append("file", file);
     try {
-      const res = await api.post("/api/expenses/parse-statement", form, {
-        timeout: 120000,
+      const token = await getToken();
+      const data = await parseStatementStream({
+        file,
+        token,
+        profileId: activeProfileId,
+        onProgress: (progress) => {
+          if (progress.phase === "reading") {
+            setImportParseStatus(
+              progress.label || "Extracting text from the PDF...",
+            );
+            return;
+          }
+          setImportParseStatus(
+            progress.label
+              ? `Trying ${progress.label}`
+              : "Reading your statement...",
+          );
+        },
       });
-      loadPdfResult(res.data);
+      loadPdfResult(data);
     } catch (err) {
       reportError(err);
       setImportError("");
@@ -758,6 +777,7 @@ const Expenses = () => {
       setImportCorrectingIndex(null);
     } finally {
       setImportParsing(false);
+      setImportParseStatus("");
     }
   }
 
@@ -2059,7 +2079,7 @@ const Expenses = () => {
               <LoadingPanel
                 className="py-10"
                 message="Reading your statement..."
-                detail="This can take up to a minute."
+                detail={importParseStatus || "Starting parser..."}
               />
             )}
             {showImportUpload && importError && (

@@ -128,6 +128,91 @@ export function parseAmount(value) {
   return Math.round(signed * 100) / 100;
 }
 
+const MIN_ATTEMPT_MS = 8_000;
+const FALLBACK_RESERVE_MS = process.env.VERCEL ? 18_000 : 30_000;
+
+function remainingMs(deadline) {
+	return deadline - Date.now();
+}
+
+function isAuthError(err) {
+	const status = Number(err?.status ?? err?.code);
+	return status === 401 || status === 403;
+}
+
+function isAttemptTimeout(err) {
+	return (
+		err?.status === 504 ||
+		err?.name === "AbortError" ||
+		err?.name === "TimeoutError" ||
+		/aborted|timed out|timeout/i.test(String(err?.message || ""))
+	);
+}
+
+function asTimeoutError(err) {
+	if (err?.status === 504) return err;
+	const timeout = new Error("Statement parsing timed out");
+	timeout.status = 504;
+	timeout.cause = err;
+	return timeout;
+}
+
+function isContextOverflow(err) {
+	const status = Number(err?.status ?? err?.code);
+	const message = String(err?.message || "").toLowerCase();
+	return (
+		status === 413 ||
+		message.includes("context_length") ||
+		message.includes("context length") ||
+		message.includes("too many tokens") ||
+		message.includes("maximum context") ||
+		message.includes("prompt is too long") ||
+		message.includes("request too large") ||
+		message.includes("payload too large")
+	);
+}
+
+function shouldTryNextModel(err) {
+	return !isAuthError(err);
+}
+
+function abortSignalForAttempt(deadline, hasFallback) {
+	const remaining = remainingMs(deadline);
+	if (remaining < MIN_ATTEMPT_MS) {
+		throw asTimeoutError();
+	}
+	let ms = remaining;
+	if (hasFallback) {
+		const reserve = Math.min(FALLBACK_RESERVE_MS, Math.floor(remaining / 2));
+		ms = Math.max(MIN_ATTEMPT_MS, remaining - reserve);
+	}
+	return AbortSignal.timeout(ms);
+}
+
+function fallbackReason(err) {
+	if (isAttemptTimeout(err)) return "timed out";
+	if (isContextOverflow(err)) return "input too long";
+	return String(err?.message || err).slice(0, 180);
+}
+
+export function parseModelLabel(provider, model) {
+	const short = String(model || "")
+		.replace(/^openai\//, "")
+		.replace(/^qwen\//, "");
+	if (provider === "gemini") return `Gemini · ${short}`;
+	if (provider === "groq") return `Groq · ${short}`;
+	return short || "parser";
+}
+
+function emitProgress(onProgress, payload) {
+	if (typeof onProgress !== "function") return;
+	try {
+		onProgress(payload);
+	} catch {
+		// UI progress must not break parsing
+	}
+}
+
 function isRetryableLlmError(err) {
 	const message = String(err?.message || "");
 	const status = err?.status ?? err?.code;
@@ -247,29 +332,44 @@ async function generateOnce({ ai, model, contents, abortSignal }) {
 	};
 }
 
-async function extractWithGemini({ text, pdfBuffer, scanned, abortSignal }) {
+async function extractWithGemini({
+	text,
+	pdfBuffer,
+	scanned,
+	deadline,
+	hasProviderFallback,
+	onProgress,
+}) {
 	const ai = new GoogleGenAI({ apiKey: geminiApiKey });
-	const contents = scanned
-		? [
-				{
-					inlineData: {
-						mimeType: "application/pdf",
-						data: pdfBuffer.toString("base64"),
-					},
-				},
-				EXTRACT_PROMPT,
-			]
-		: `${EXTRACT_PROMPT}\n\n---\n${text}`;
-
+	let statementText = text;
 	let lastError;
+
 	for (let i = 0; i < geminiModels.length; i++) {
 		const model = geminiModels[i];
+		emitProgress(onProgress, {
+			phase: "model",
+			provider: "gemini",
+			model,
+			label: parseModelLabel("gemini", model),
+		});
+		const hasFallback = i < geminiModels.length - 1 || hasProviderFallback;
+		const contents = scanned
+			? [
+					{
+						inlineData: {
+							mimeType: "application/pdf",
+							data: pdfBuffer.toString("base64"),
+						},
+					},
+					EXTRACT_PROMPT,
+				]
+			: `${EXTRACT_PROMPT}\n\n---\n${statementText}`;
 		try {
 			const result = await generateOnce({
 				ai,
 				model,
 				contents,
-				abortSignal,
+				abortSignal: abortSignalForAttempt(deadline, hasFallback),
 			});
 			const raw = result.text;
 			console.log(
@@ -294,19 +394,24 @@ async function extractWithGemini({ text, pdfBuffer, scanned, abortSignal }) {
 				throw err;
 			}
 		} catch (err) {
-			lastError = err;
-			if (abortSignal.aborted || err?.name === "AbortError") {
-				const timeout = new Error("Statement parsing timed out");
-				timeout.status = 504;
-				throw timeout;
-			}
-			if (i < geminiModels.length - 1 && isRetryableLlmError(err)) {
+			const failed = isAttemptTimeout(err) ? asTimeoutError(err) : err;
+			lastError = failed;
+			if (isContextOverflow(failed) && statementText.length > 4_000) {
+				statementText = statementText.slice(
+					0,
+					Math.floor(statementText.length * 0.6)
+				);
 				console.log(
-					`[parse-statement] ${model} unavailable, trying ${geminiModels[i + 1]}`
+					`[parse-statement] shrinking statement text to ${statementText.length} chars`
+				);
+			}
+			if (i < geminiModels.length - 1 && shouldTryNextModel(failed)) {
+				console.log(
+					`[parse-statement] gemini ${model} failed (${fallbackReason(failed)}), trying ${geminiModels[i + 1]}`
 				);
 				continue;
 			}
-			throw err;
+			throw failed;
 		}
 	}
 
@@ -372,12 +477,22 @@ async function generateGroqOnce({ model, messages, abortSignal }) {
 		throw err;
 	}
 	const payload = JSON.parse(rawBody);
-	const message = payload?.choices?.[0]?.message || {};
-	return message.content || message.reasoning || "";
+	const choice = payload?.choices?.[0] || {};
+	const message = choice.message || {};
+	const text = message.content || message.reasoning || "";
+	if (!text && choice.finish_reason === "length") {
+		const err = new Error(
+			"Could not extract transactions from this statement"
+		);
+		err.status = 422;
+		throw err;
+	}
+	return text;
 }
 
-async function extractWithGroq({ text, pdfBuffer, scanned, abortSignal }) {
+async function extractWithGroq({ text, pdfBuffer, scanned, deadline, onProgress }) {
 	let images = [];
+	let statementText = text;
 	if (scanned) {
 		try {
 			images = await renderPdfPageImages(pdfBuffer, MAX_GROQ_IMAGES);
@@ -394,30 +509,41 @@ async function extractWithGroq({ text, pdfBuffer, scanned, abortSignal }) {
 
 	const jsonHint =
 		'Return JSON only, as {"transactions":[{"date":"YYYY-MM-DD","vendor":"","amount":0,"account":"","notes":""}]}';
-	const userContent = groqVisionModel && images.length
-		? [
-				{ type: "text", text: `${EXTRACT_PROMPT}\n\n${jsonHint}` },
-				...images.map((url) => ({
-					type: "image_url",
-					image_url: { url },
-				})),
-			]
-		: `${EXTRACT_PROMPT}\n\n${jsonHint}\n\n---\n${text}`;
-
-	const messages = [
-		{
-			role: "system",
-			content:
-				"You extract posted bank and credit-card transactions. Reply with JSON only.",
-		},
-		{ role: "user", content: userContent },
-	];
 
 	let lastError;
 	for (let i = 0; i < models.length; i++) {
 		const model = models[i];
+		emitProgress(onProgress, {
+			phase: "model",
+			provider: "groq",
+			model,
+			label: parseModelLabel("groq", model),
+		});
+		const hasFallback = i < models.length - 1;
+		const userContent =
+			groqVisionModel && images.length
+				? [
+						{ type: "text", text: `${EXTRACT_PROMPT}\n\n${jsonHint}` },
+						...images.map((url) => ({
+							type: "image_url",
+							image_url: { url },
+						})),
+					]
+				: `${EXTRACT_PROMPT}\n\n${jsonHint}\n\n---\n${statementText}`;
+		const messages = [
+			{
+				role: "system",
+				content:
+					"You extract posted bank and credit-card transactions. Reply with JSON only.",
+			},
+			{ role: "user", content: userContent },
+		];
 		try {
-			const raw = await generateGroqOnce({ model, messages, abortSignal });
+			const raw = await generateGroqOnce({
+				model,
+				messages,
+				abortSignal: abortSignalForAttempt(deadline, hasFallback),
+			});
 			console.log(
 				maskPan(
 					`[parse-statement] groq ${model} scanned=${scanned} images=${images.length}\n${raw || "(empty)"}`
@@ -440,71 +566,82 @@ async function extractWithGroq({ text, pdfBuffer, scanned, abortSignal }) {
 				throw err;
 			}
 		} catch (err) {
-			lastError = err;
-			if (abortSignal.aborted || err?.name === "AbortError") {
-				const timeout = new Error("Statement parsing timed out");
-				timeout.status = 504;
-				throw timeout;
-			}
-			if (
-				i < models.length - 1 &&
-				(isRetryableLlmError(err) || err?.status === 422)
-			) {
+			const failed = isAttemptTimeout(err) ? asTimeoutError(err) : err;
+			lastError = failed;
+			if (isContextOverflow(failed) && images.length > 1) {
+				images = images.slice(0, Math.ceil(images.length / 2));
 				console.log(
-					`[parse-statement] groq ${model} unavailable, trying ${models[i + 1]}: ${String(err.message || err).slice(0, 180)}`
+					`[parse-statement] shrinking groq images to ${images.length}`
+				);
+			} else if (isContextOverflow(failed) && statementText.length > 4_000) {
+				statementText = statementText.slice(
+					0,
+					Math.floor(statementText.length * 0.6)
+				);
+				console.log(
+					`[parse-statement] shrinking statement text to ${statementText.length} chars`
+				);
+			}
+			if (i < models.length - 1 && shouldTryNextModel(failed)) {
+				console.log(
+					`[parse-statement] groq ${model} failed (${fallbackReason(failed)}), trying ${models[i + 1]}`
 				);
 				continue;
 			}
-			throw err;
+			throw failed;
 		}
 	}
 
 	throw lastError;
 }
 
-async function extractTransactions({ text, pdfBuffer, scanned }) {
+async function extractTransactions({ text, pdfBuffer, scanned, onProgress }) {
 	if (!geminiApiKey && !groqApiKey) {
 		const err = new Error("Statement parsing is not configured");
 		err.status = 503;
 		throw err;
 	}
 
-	const controller = new AbortController();
-	const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+	const deadline = Date.now() + GEMINI_TIMEOUT_MS;
 	let lastError;
-	try {
-		if (geminiApiKey) {
-			try {
-				return await extractWithGemini({
-					text,
-					pdfBuffer,
-					scanned,
-					abortSignal: controller.signal,
-				});
-			} catch (err) {
-				lastError = err;
-				if (err?.status === 504 || err?.name === "AbortError") throw err;
-				if (groqApiKey && (isRetryableLlmError(err) || err?.status === 422)) {
-					console.log("[parse-statement] gemini unavailable, trying groq");
-				} else {
-					throw err;
-				}
-			}
-		}
 
-		if (groqApiKey) {
-			return await extractWithGroq({
+	if (geminiApiKey) {
+		try {
+			return await extractWithGemini({
 				text,
 				pdfBuffer,
 				scanned,
-				abortSignal: controller.signal,
+				deadline,
+				hasProviderFallback: Boolean(groqApiKey),
+				onProgress,
 			});
+		} catch (err) {
+			lastError = err;
+			if (
+				groqApiKey &&
+				remainingMs(deadline) >= MIN_ATTEMPT_MS &&
+				shouldTryNextModel(err)
+			) {
+				console.log(
+					`[parse-statement] gemini failed (${fallbackReason(err)}), trying groq`
+				);
+			} else {
+				throw err;
+			}
 		}
-
-		throw lastError;
-	} finally {
-		clearTimeout(timer);
 	}
+
+	if (groqApiKey) {
+		return await extractWithGroq({
+			text,
+			pdfBuffer,
+			scanned,
+			deadline,
+			onProgress,
+		});
+	}
+
+	throw lastError;
 }
 
 export function validateTransactions(payload) {
@@ -551,8 +688,12 @@ export function validateTransactions(payload) {
   };
 }
 
-export async function parseStatementPdf(buffer) {
+export async function parseStatementPdf(buffer, { onProgress } = {}) {
   const warnings = [];
+  emitProgress(onProgress, {
+    phase: "reading",
+    label: "Extracting text from the PDF",
+  });
   let extracted;
   try {
     extracted = await extractPdfText(buffer);
@@ -586,6 +727,7 @@ export async function parseStatementPdf(buffer) {
       text,
       pdfBuffer: buffer,
       scanned,
+      onProgress,
     });
   } catch (err) {
     if (err.status === 504 || err.message === "Statement parsing timed out") {
@@ -594,6 +736,13 @@ export async function parseStatementPdf(buffer) {
       );
       timeout.status = 504;
       throw timeout;
+    }
+    if (isContextOverflow(err)) {
+      const tooLong = new Error(
+        "This statement is too long to parse in one pass. Split it and try again.",
+      );
+      tooLong.status = 413;
+      throw tooLong;
     }
     if (isRetryableLlmError(err)) {
       const busy = new Error(
