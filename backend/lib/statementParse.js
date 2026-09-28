@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { PDFParse } from "pdf-parse";
+import { createRequire } from "node:module";
 import { geminiApiKey, geminiModel } from "../config.js";
 import {
 	GEMINI_TIMEOUT_MS,
@@ -136,17 +136,44 @@ function sleep(ms) {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const require = createRequire(import.meta.url);
+
+function loadPdfjs() {
+	const pdfjs = require("pdfjs-dist/legacy/build/pdf.js");
+	pdfjs.GlobalWorkerOptions.workerSrc = require.resolve(
+		"pdfjs-dist/legacy/build/pdf.worker.js"
+	);
+	return pdfjs;
+}
+
 export async function extractPdfText(buffer) {
-	let parser;
+	const pdfjs = loadPdfjs();
+	const loadingTask = pdfjs.getDocument({
+		data: Uint8Array.from(buffer),
+		disableFontFace: true,
+		isEvalSupported: false,
+		useSystemFonts: true,
+		verbosity: 0,
+	});
+	const doc = await loadingTask.promise;
 	try {
-		parser = new PDFParse({ data: Uint8Array.from(buffer) });
-		const result = await parser.getText();
+		const pages = doc.numPages;
+		const parts = [];
+		for (let pageNum = 1; pageNum <= pages; pageNum++) {
+			const page = await doc.getPage(pageNum);
+			const content = await page.getTextContent();
+			parts.push(
+				content.items
+					.map((item) => (typeof item.str === "string" ? item.str : ""))
+					.join(" ")
+			);
+		}
 		return {
-			text: (result.text || "").trim(),
-			pages: Number(result.total) || 0,
+			text: parts.join("\n").trim(),
+			pages,
 		};
 	} finally {
-		if (parser) await parser.destroy().catch(() => {});
+		await doc.destroy();
 	}
 }
 
