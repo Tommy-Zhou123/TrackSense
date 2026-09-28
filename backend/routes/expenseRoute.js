@@ -4,7 +4,7 @@ import { isLoggedIn, requireProfile, requireProfileWrite } from "../middleware.j
 import { supabase } from "../lib/supabase.js";
 import { mapExpense, toDateValue, isSplitAssignment } from "../lib/expense.js";
 import { activeMemberOnProfile, isUuid } from "../lib/profile.js";
-import { geminiApiKey } from "../config.js";
+import { geminiApiKey, groqApiKey } from "../config.js";
 import { maskPan, parseStatementPdf } from "../lib/statementParse.js";
 import {
 	writeLimiter,
@@ -185,7 +185,7 @@ router.post(
 	acceptPdfUpload,
 	async (req, res) => {
 		try {
-			if (!geminiApiKey) {
+			if (!geminiApiKey && !groqApiKey) {
 				return res.status(503).send({
 					message: "Statement parsing is not configured",
 				});
