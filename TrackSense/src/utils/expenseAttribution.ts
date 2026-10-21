@@ -91,6 +91,60 @@ export function allocateSplitAmount(
   return shares;
 }
 
+export function splitPieLabel(members: ProfileMember[]): string {
+  const count = activePeople(members).length;
+  if (count <= 1) return "Split";
+  return `Split (${count})`;
+}
+
+export function chartExpensesByPerson<T extends { amount: number; assignedMemberId?: string | null }>(
+  expenses: T[],
+  members: ProfileMember[],
+  selfMemberId?: string | null,
+): Array<T & { category: string }> {
+  const people = activePeople(members);
+  if (people.length === 0) {
+    return expenses.map((expense) => ({ ...expense, category: "Unassigned" }));
+  }
+  const splitLabel = splitPieLabel(members);
+  return expenses.map((expense) => {
+    const assigned = isSplitAssignment(expense.assignedMemberId)
+      ? undefined
+      : people.find((member) => member.id === expense.assignedMemberId);
+    return {
+      ...expense,
+      category: assigned ? personLabel(assigned, selfMemberId) : splitLabel,
+    };
+  });
+}
+
+export function personPieSlices<T extends { amount: number; assignedMemberId?: string | null }>(
+  expenses: T[],
+  members: ProfileMember[],
+  selfMemberId?: string | null,
+  options: { people?: Iterable<string> } = {},
+): Array<{ category: string; amount: number }> {
+  const allowed = options.people === undefined ? null : new Set(options.people);
+  if (allowed && allowed.size === 0) return [];
+
+  const totals = new Map<string, number>();
+  for (const row of chartExpensesByPerson(expenses, members, selfMemberId)) {
+    if (!Number.isFinite(row.amount)) continue;
+    if (allowed && !allowed.has(row.category)) continue;
+    totals.set(row.category, (totals.get(row.category) || 0) + row.amount);
+  }
+
+  const splitLabel = activePeople(members).length === 0 ? "Unassigned" : splitPieLabel(members);
+  const slices: Array<{ category: string; amount: number }> = [];
+  const splitTotal = totals.get(splitLabel) || 0;
+  if (splitTotal !== 0) slices.push({ category: splitLabel, amount: splitTotal });
+  const personal = [...totals.entries()]
+    .filter(([category, amount]) => category !== splitLabel && amount !== 0)
+    .map(([category, amount]) => ({ category, amount }))
+    .sort((a, b) => b.amount - a.amount || a.category.localeCompare(b.category));
+  return [...slices, ...personal];
+}
+
 export function expensesByPerson<T extends { amount: number; assignedMemberId?: string | null }>(
   expenses: T[],
   members: ProfileMember[],

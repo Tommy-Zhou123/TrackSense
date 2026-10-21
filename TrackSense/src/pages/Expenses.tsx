@@ -104,83 +104,18 @@ import {
   isSplitAssignment,
   personLabel,
 } from "@/utils/expenseAttribution";
-
-type ExpensePart =
-  | "none"
-  | "date"
-  | "account"
-  | "vendor"
-  | "amount"
-  | "category"
-  | "notes"
-  | "person";
+import {
+  getGroupKey,
+  groupsForPage,
+  orderExpenses,
+  type ExpensePart,
+  type ExpenseSort,
+} from "@/utils/expenseTable";
 
 const formatDate = (date: Date) => {
   if (!date || Number.isNaN(date.getTime())) return "";
   return date.toISOString().split("T")[0];
 };
-
-function getGroupKey(expense: Expense, mode: ExpensePart): string {
-  switch (mode) {
-    case "date":
-      return formatDate(expense.date);
-    case "amount":
-      return expense.amount.toString();
-    case "account":
-      return expense.account || "";
-    case "vendor":
-      return expense.vendor || "";
-    case "category":
-      return expense.category || "";
-    case "person":
-      return expense.assignedMemberId &&
-        !isSplitAssignment(expense.assignedMemberId)
-        ? expense.assignedMemberId
-        : "split";
-    case "notes":
-      return expense.notes || "";
-    default:
-      return "";
-  }
-}
-
-function sortExpenseList(
-  list: Expense[],
-  sortByProp: ExpensePart,
-  sort: "down" | "up" = "down",
-): Expense[] {
-  const updated = [...list];
-  const direction = sort === "down" ? 1 : -1;
-  if (sortByProp === "date") {
-    updated.sort((a, b) => direction * (a.date.getTime() - b.date.getTime()));
-  } else if (sortByProp === "amount") {
-    updated.sort((a, b) => direction * (a.amount - b.amount));
-  } else if (sortByProp !== "none") {
-    updated.sort(
-      (a, b) =>
-        direction *
-        getGroupKey(a, sortByProp).localeCompare(getGroupKey(b, sortByProp)),
-    );
-  }
-  return updated;
-}
-
-function groupExpenses(
-  list: Expense[],
-  mode: ExpensePart,
-): { key: string; items: Expense[] }[] {
-  const groups = new Map<string, Expense[]>();
-  for (const expense of list) {
-    const key = getGroupKey(expense, mode);
-    const items = groups.get(key);
-    if (items) {
-      items.push(expense);
-    } else {
-      groups.set(key, [expense]);
-    }
-  }
-  return Array.from(groups, ([key, items]) => ({ key, items }));
-}
 
 function expensePayload(expense: Expense) {
   return {
@@ -254,7 +189,6 @@ function filteredExpenseList(
   dateRange: DateKeyRange | null,
   filterBy: string,
   searchTerm: string,
-  grouping: ExpensePart,
   personName?: (expense: Expense) => string,
 ): Expense[] {
   let list = dateRange
@@ -265,16 +199,15 @@ function filteredExpenseList(
       matchesSearch(expense, filterBy, searchTerm, personName),
     );
   }
-  if (grouping !== "none") {
-    list = sortExpenseList(list, grouping, "down");
-  }
   return list;
 }
 
 const Expenses = () => {
   let accCounter = 1;
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [orderedExpenses, setOrderedExpenses] = useState<Expense[]>([]);
   const [editableExpenses, setEditableExpenses] = useState<Expense[]>([]);
+  const editDraftsRef = useRef<Map<string, Expense>>(new Map());
   const [checkedExps, setCheckedExps] = useState<string[]>([]);
 
   const [accSelect, setAccSelect] = useState("");
@@ -316,6 +249,7 @@ const Expenses = () => {
   const [sortAmount, setSortAmount] = useState<"down" | "up">("down");
   const [sortCategory, setSortCategory] = useState<"down" | "up">("down");
   const [sortNotes, setSortNotes] = useState<"down" | "up">("down");
+  const [activeSort, setActiveSort] = useState<ExpenseSort | null>(null);
 
   const [groupMode, setGroupMode] = useState<ExpensePart>("none");
   const [searchBySelect, setSearchBySelect] = useState<string>("category");
@@ -451,6 +385,7 @@ const Expenses = () => {
 
   useEffect(() => {
     if (!activeProfileId) return;
+    editDraftsRef.current.clear();
     setEditMode(false);
     setEditId(null);
     resetEditCategoryAdd();
@@ -482,6 +417,19 @@ const Expenses = () => {
     pendingVendorCorrection.current = false;
   }
 
+  function rememberDrafts(rows: Expense[]) {
+    for (const row of rows) editDraftsRef.current.set(row._id, row);
+  }
+
+  function clearDrafts() {
+    editDraftsRef.current.clear();
+  }
+
+  function withDrafts(rows: Expense[]) {
+    if (editDraftsRef.current.size === 0) return rows;
+    return rows.map((row) => editDraftsRef.current.get(row._id) ?? row);
+  }
+
   function showExpenses(
     all: Expense[] = expensesCopy,
     overrides: {
@@ -490,41 +438,63 @@ const Expenses = () => {
       filterBy?: string;
       grouping?: ExpensePart;
       page?: number;
+      sort?: ExpenseSort | null;
+      resetExpanded?: boolean;
     } = {},
   ) {
+    const editing = editMode || editId != null;
+    if (editing) rememberDrafts(editableExpenses);
     const range = overrides.range ?? dateRange;
     const query = overrides.query ?? searchByQuery;
     const filterBy = overrides.filterBy ?? searchBySelect;
     const grouping = overrides.grouping ?? groupMode;
     const page = overrides.page ?? currentPage;
-    const list = filteredExpenseList(
+    const sort = overrides.sort === undefined ? activeSort : overrides.sort;
+    const filtered = filteredExpenseList(
       all,
       range,
       filterBy,
       query,
-      grouping,
       personName,
     );
+    const list = orderExpenses(
+      editing ? withDrafts(filtered) : filtered,
+      grouping,
+      sort,
+    );
+    setOrderedExpenses(list);
     setFilteredTotal(list.length);
 
     if (grouping !== "none") {
-      setExpanded(buildExpandedMap(list, grouping, true));
-      setExpenses(list);
-      if (editMode) setEditableExpenses(list);
-      return;
+      if (overrides.resetExpanded) {
+        setExpanded(buildExpandedMap(list, grouping, true));
+      } else {
+        setExpanded((current) => {
+          const next = new Map(current);
+          let changed = false;
+          for (const expense of list) {
+            const key = getGroupKey(expense, grouping);
+            if (!next.has(key)) {
+              next.set(key, true);
+              changed = true;
+            }
+          }
+          return changed ? next : current;
+        });
+      }
     }
 
-    if (query) {
-      setExpenses(list);
-      return;
+    let visible = list;
+    if (!query) {
+      const totalPages = Math.max(1, Math.ceil(list.length / perPage) || 1);
+      const safePage = Math.min(Math.max(1, page), totalPages);
+      if (safePage !== currentPage) setCurrentPage(safePage);
+      const start = (safePage - 1) * perPage;
+      visible = list.slice(start, start + perPage);
     }
 
-    const totalPages = Math.max(1, Math.ceil(list.length / perPage) || 1);
-    const safePage = Math.min(Math.max(1, page), totalPages);
-    if (safePage !== currentPage && overrides.page == null) {
-      setCurrentPage(safePage);
-    }
-    setExpenses(list.slice((safePage - 1) * perPage, safePage * perPage));
+    setExpenses(visible);
+    if (editing) setEditableExpenses(visible);
   }
 
   function handleDateRangeChange(value: DateKeyRange | null) {
@@ -585,14 +555,19 @@ const Expenses = () => {
   }
 
   async function EditExpenses() {
+    if (editMode || editId != null) rememberDrafts(editableExpenses);
     const originals = new Map(expensesCopy.map((item) => [item._id, item]));
-    const rows = editId
-      ? editableExpenses.filter((item) => item._id === editId)
-      : editableExpenses;
+    const drafted = editId
+      ? [editDraftsRef.current.get(editId)].filter((item): item is Expense =>
+          Boolean(item),
+        )
+      : Array.from(editDraftsRef.current.values());
+    const rows = drafted.length > 0 ? drafted : editableExpenses;
     const changed = rows.filter((item) =>
       expenseChanged(item, originals.get(item._id)),
     );
     if (changed.length === 0) {
+      clearDrafts();
       setEditMode(false);
       setEditId(null);
       resetEditCategoryAdd();
@@ -625,9 +600,7 @@ const Expenses = () => {
           },
         ]),
       );
-      setExpenses((current) =>
-        current.map((item) => byId.get(item._id) || item),
-      );
+      clearDrafts();
       setExpensesCopy((current) =>
         current.map((item) => byId.get(item._id) || item),
       );
@@ -1210,6 +1183,7 @@ const Expenses = () => {
   }
 
   function handleDbClickEdit(id: string) {
+    clearDrafts();
     setEditableExpenses(expenses);
     setEditId(id);
     resetEditCategoryAdd();
@@ -1315,19 +1289,22 @@ const Expenses = () => {
   }
 
   function sortBy(sortByProp: ExpensePart, sort: "down" | "up" = "down") {
-    const updatedExpenses = sortExpenseList(expenses, sortByProp, sort);
-    setExpenses(updatedExpenses);
-    if (editMode) {
-      setEditableExpenses(sortExpenseList(editableExpenses, sortByProp, sort));
-    }
+    if (sortByProp === "none") return;
+    const next: ExpenseSort = { key: sortByProp, direction: sort };
+    setActiveSort(next);
+    setCurrentPage(1);
+    showExpenses(expensesCopy, { sort: next, page: 1 });
   }
 
   function handleGroupBy(mode: ExpensePart) {
     setGroupMode(mode);
-    if (mode === "none") {
-      setExpanded(new Map());
-    }
-    showExpenses(expensesCopy, { grouping: mode, page: currentPage });
+    setCurrentPage(1);
+    if (mode === "none") setExpanded(new Map());
+    showExpenses(expensesCopy, {
+      grouping: mode,
+      page: 1,
+      resetExpanded: mode !== "none",
+    });
   }
 
   function toggleGroup(key: string) {
@@ -1338,8 +1315,7 @@ const Expenses = () => {
   }
 
   function setAllExpanded(open: boolean) {
-    const list = editMode ? editableExpenses : expenses;
-    setExpanded(buildExpandedMap(list, groupMode, open));
+    setExpanded(buildExpandedMap(orderedExpenses, groupMode, open));
   }
 
   function filterBySearch(
@@ -1439,19 +1415,32 @@ const Expenses = () => {
     );
   }
 
+  function rowForRender(expense: Expense) {
+    if (!editMode && editId == null) return expense;
+    return (
+      editableExpenses.find((item) => item._id === expense._id) ??
+      editDraftsRef.current.get(expense._id) ??
+      expense
+    );
+  }
+
   function renderTableBody() {
-    const list = editMode ? editableExpenses : expenses;
+    const list = editMode || editId != null ? editableExpenses : expenses;
     if (groupMode === "none") {
       return list.map((expense) => renderExpenseRow(expense, false));
     }
 
-    const groups = groupExpenses(list, groupMode);
+    const page = searchByQuery ? 1 : currentPage;
+    const pageSize = searchByQuery
+      ? Math.max(orderedExpenses.length, 1)
+      : perPage;
+    const groups = groupsForPage(orderedExpenses, groupMode, page, pageSize);
     return groups.map((group, index) => {
       const isOpen = expanded.get(group.key) !== false;
       const bg = index % 2 === 0;
       const countLabel =
-        group.items.length === 1 ? "1 item" : `${group.items.length} items`;
-      const groupIds = group.items.map((expense) => expense._id.toString());
+        group.total === 1 ? "1 item" : `${group.total} items`;
+      const groupIds = group.ids;
       const selectedCount = groupIds.filter((id) =>
         checkedExps.includes(id),
       ).length;
@@ -1500,7 +1489,9 @@ const Expenses = () => {
             </TableCell>
           </TableRow>
           {isOpen
-            ? group.items.map((expense) => renderExpenseRow(expense, bg))
+            ? group.items.map((expense) =>
+                renderExpenseRow(rowForRender(expense), bg),
+              )
             : null}
         </React.Fragment>
       );
@@ -1565,6 +1556,7 @@ const Expenses = () => {
                       type="button"
                       variant="outline"
                       onClick={() => {
+                        clearDrafts();
                         setEditMode(false);
                         setEditId(null);
                         setEditableExpenses(expenses);
@@ -1578,6 +1570,7 @@ const Expenses = () => {
                   <Button
                     variant="outline"
                     onClick={() => {
+                      clearDrafts();
                       setEditMode(true);
                       setEditableExpenses(expenses);
                       resetEditCategoryAdd();
@@ -1804,7 +1797,7 @@ const Expenses = () => {
           )}
         </div>
 
-        {groupMode === "none" && !searchByQuery && !expensesLoading && (
+        {!searchByQuery && !expensesLoading && (
           <ExpensePagination
             currentPage={currentPage}
             perPage={perPage}

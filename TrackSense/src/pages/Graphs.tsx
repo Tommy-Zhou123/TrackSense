@@ -48,7 +48,7 @@ import {
     groupLookup,
     mapExpensesToGroups,
 } from "@/utils/categoryGroup";
-import { expensesByPerson } from "@/utils/expenseAttribution";
+import { chartExpensesByPerson, personPieSlices } from "@/utils/expenseAttribution";
 
 type ChartView = "category" | "group" | "person";
 
@@ -143,6 +143,13 @@ function EmptyPanel({ message }: { message: string }) {
     );
 }
 
+function personSeriesOrder(categories: string[]): string[] {
+    const split = categories.filter((category) => category === "Split" || /^Split \(\d+\)$/.test(category));
+    if (split.length === 0) return categories;
+    const rest = categories.filter((category) => !split.includes(category));
+    return [...split, ...rest];
+}
+
 function grainNoun(grain: PeriodGrain): string {
     if (grain === "day") return "day";
     if (grain === "month") return "month";
@@ -163,7 +170,7 @@ export default function Graphs() {
     const lookup = useMemo(() => groupLookup(groups), [groups]);
     const chartExpenses = useMemo(() => {
         if (chartView === "person") {
-            return expensesByPerson(expenses, people, activeProfile?.memberId);
+            return chartExpensesByPerson(expenses, people, activeProfile?.memberId);
         }
         if (chartView === "group") {
             return mapExpensesToGroups(expenses, lookup, { groupedOnly: true });
@@ -196,14 +203,16 @@ export default function Graphs() {
         [inBarRange, deselected],
     );
 
-    const chart = useMemo(() => (
-        aggregateCategoryPeriod(inBarRange, {
+    const chart = useMemo(() => {
+        const aggregated = aggregateCategoryPeriod(inBarRange, {
             grain: barGrain,
             periodStart: dateKeyToPeriodKey(alignedBarRange.start, barGrain),
             periodEnd: dateKeyToPeriodKey(alignedBarRange.end, barGrain),
             categories: barCategories,
-        })
-    ), [inBarRange, barGrain, alignedBarRange, barCategories]);
+        });
+        if (chartView !== "person") return aggregated;
+        return { ...aggregated, categories: personSeriesOrder(aggregated.categories) };
+    }, [inBarRange, barGrain, alignedBarRange, barCategories, chartView]);
 
     const barRows = useMemo(() => {
         if (showCategories) return chart.rows;
@@ -213,12 +222,26 @@ export default function Graphs() {
         }));
     }, [chart, showCategories]);
 
-    const pieData = useMemo(
-        () => aggregateCategoryTotals(inPieRange, {
+    const pieData = useMemo(() => {
+        if (chartView === "person") {
+            const inRange = expenses.filter((expense) => expenseInKeyRange(expense.date, alignedPieRange));
+            return personPieSlices(inRange, people, activeProfile?.memberId, {
+                people: selectedCategories,
+            });
+        }
+        return aggregateCategoryTotals(inPieRange, {
             categories: uniqueCategories(inPieRange).filter((category) => !deselected.has(category)),
-        }),
-        [inPieRange, deselected],
-    );
+        });
+    }, [
+        chartView,
+        expenses,
+        alignedPieRange,
+        people,
+        activeProfile?.memberId,
+        selectedCategories,
+        inPieRange,
+        deselected,
+    ]);
 
     const sliceNoun = chartView === "person"
         ? "people"
