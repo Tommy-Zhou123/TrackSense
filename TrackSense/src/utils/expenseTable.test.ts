@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Expense } from "@/types/expense";
-import { groupsForPage, orderExpenses } from "./expenseTable";
+import { groupsForPage, orderExpenses, sumExpenseAmounts } from "./expenseTable";
 
 function expense(partial: Pick<Expense, "_id" | "amount" | "category"> & Partial<Expense>): Expense {
   return {
@@ -50,6 +50,7 @@ describe("orderExpenses", () => {
     expect(page.map((group) => group.key)).toEqual(["Rent"]);
     expect(page[0].items.map((row) => row._id)).toEqual(["b", "d"]);
     expect(page[0].total).toBe(2);
+    expect(page[0].amount).toBe(6);
   });
 
   it("sorts inside each group without splitting the group across the sort", () => {
@@ -83,11 +84,27 @@ describe("groupsForPage", () => {
     expect(first[0].key).toBe("Groceries");
     expect(first[0].items.map((row) => row._id)).toEqual(["g1", "g2"]);
     expect(first[0].total).toBe(3);
+    expect(first[0].amount).toBe(6);
     expect(first[0].ids).toEqual(["g1", "g2", "g3"]);
 
     expect(second.map((group) => group.key)).toEqual(["Groceries", "Rent"]);
     expect(second[0].items.map((row) => row._id)).toEqual(["g3"]);
     expect(second[0].total).toBe(3);
+    expect(second[0].amount).toBe(6);
     expect(second[1].items.map((row) => row._id)).toEqual(["r1"]);
+    expect(second[1].amount).toBe(4);
+  });
+});
+
+describe("sumExpenseAmounts", () => {
+  it("sums the amounts it is given and skips values that are not numbers", () => {
+    expect(
+      sumExpenseAmounts([
+        { amount: 10.5 },
+        { amount: 2 },
+        { amount: Number.NaN },
+      ]),
+    ).toBeCloseTo(12.5);
+    expect(sumExpenseAmounts([])).toBe(0);
   });
 });

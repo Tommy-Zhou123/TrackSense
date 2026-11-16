@@ -48,6 +48,33 @@ export function attributionLabel(
   return `Split (${people.length})`;
 }
 
+/** Names a person search should hit, including everyone who shares a split. */
+export function personSearchLabels(
+  assignedMemberId: string | null | undefined,
+  members: ProfileMember[],
+  selfMemberId?: string | null,
+): string[] {
+  const label = attributionLabel(assignedMemberId, members, selfMemberId);
+  if (!isSplitAssignment(assignedMemberId)) return [label];
+  const shares = effectiveSplitWeights(members)
+    .filter((item) => item.weight > 0)
+    .map((item) => personLabel(item.member, selfMemberId));
+  return [label, ...shares];
+}
+
+export function matchesPersonSearch(
+  assignedMemberId: string | null | undefined,
+  query: string,
+  members: ProfileMember[],
+  selfMemberId?: string | null,
+): boolean {
+  const term = query.trim().toLowerCase();
+  if (!term) return true;
+  return personSearchLabels(assignedMemberId, members, selfMemberId).some((label) =>
+    label.toLowerCase().includes(term),
+  );
+}
+
 export function splitAmount(amount: number, peopleCount: number): number {
   const n = Math.max(peopleCount, 1);
   return amount / n;

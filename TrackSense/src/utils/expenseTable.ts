@@ -22,8 +22,18 @@ export type ExpenseGroupView = {
   key: string;
   items: Expense[];
   total: number;
+  amount: number;
   ids: string[];
 };
+
+export function sumExpenseAmounts(list: readonly { amount: number }[]): number {
+  let sum = 0;
+  for (const item of list) {
+    const amount = Number(item.amount);
+    if (Number.isFinite(amount)) sum += amount;
+  }
+  return sum;
+}
 
 function dateKey(date: Date) {
   if (!date || Number.isNaN(date.getTime())) return "";
@@ -137,6 +147,7 @@ export function groupsForPage(
       key: group.key,
       items: group.items.slice(from, to),
       total: group.items.length,
+      amount: sumExpenseAmounts(group.items),
       ids: group.items.map((item) => item._id.toString()),
     });
   }

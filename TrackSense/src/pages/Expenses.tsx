@@ -63,6 +63,15 @@ import {
   reuseExistingCategory,
 } from "@/utils/csvImport";
 import {
+  defaultExportColumns,
+  downloadCsv,
+  EXPENSE_CSV_FIELDS,
+  expenseExportFilename,
+  expensesToCsv,
+  selectedExportFields,
+  type ExpenseCsvField,
+} from "@/utils/csvExport";
+import {
   fillUncategorizedByExactVendor,
   fillUncategorizedByFingerprint,
   normalizeVendor,
@@ -102,12 +111,14 @@ import {
   SPLIT_VALUE,
   attributionLabel,
   isSplitAssignment,
+  matchesPersonSearch,
   personLabel,
 } from "@/utils/expenseAttribution";
 import {
   getGroupKey,
   groupsForPage,
   orderExpenses,
+  sumExpenseAmounts,
   type ExpensePart,
   type ExpenseSort,
 } from "@/utils/expenseTable";
@@ -116,6 +127,32 @@ const formatDate = (date: Date) => {
   if (!date || Number.isNaN(date.getTime())) return "";
   return date.toISOString().split("T")[0];
 };
+
+const money = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+});
+
+function formatMoney(value: number) {
+  return money.format(Number.isFinite(value) ? value : 0);
+}
+
+function exportPreviewValue(
+  expense: Expense,
+  field: ExpenseCsvField,
+  personFor: (expense: Expense) => string,
+): string {
+  switch (field) {
+    case "date":
+      return formatDate(expense.date);
+    case "amount":
+      return String(expense.amount);
+    case "person":
+      return personFor(expense);
+    default:
+      return expense[field] || "";
+  }
+}
 
 function expensePayload(expense: Expense) {
   return {
@@ -163,7 +200,7 @@ function matchesSearch(
   expense: Expense,
   filterBy: string,
   searchTerm: string,
-  personName?: (expense: Expense) => string,
+  matchesPerson?: (expense: Expense, term: string) => boolean,
 ): boolean {
   if (!searchTerm) return true;
   const term = searchTerm.toLowerCase();
@@ -176,7 +213,7 @@ function matchesSearch(
   if (filterBy === "category")
     return (expense.category || "").toLowerCase().includes(term);
   if (filterBy === "person")
-    return (personName?.(expense) || "split").toLowerCase().includes(term);
+    return matchesPerson ? matchesPerson(expense, term) : "split".includes(term);
   if (filterBy === "amount")
     return expense.amount.toString().includes(searchTerm);
   if (filterBy === "notes")
@@ -189,14 +226,14 @@ function filteredExpenseList(
   dateRange: DateKeyRange | null,
   filterBy: string,
   searchTerm: string,
-  personName?: (expense: Expense) => string,
+  matchesPerson?: (expense: Expense, term: string) => boolean,
 ): Expense[] {
   let list = dateRange
     ? all.filter((expense) => expenseInKeyRange(expense.date, dateRange))
     : all;
   if (searchTerm) {
     list = list.filter((expense) =>
-      matchesSearch(expense, filterBy, searchTerm, personName),
+      matchesSearch(expense, filterBy, searchTerm, matchesPerson),
     );
   }
   return list;
@@ -291,6 +328,12 @@ const Expenses = () => {
   const [importHasAccount, setImportHasAccount] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [showExport, setShowExport] = useState(false);
+  const [exportRows, setExportRows] = useState<Expense[]>([]);
+  const [exportSelected, setExportSelected] = useState<boolean[]>([]);
+  const [exportColumns, setExportColumns] = useState(defaultExportColumns());
+  const [exportPage, setExportPage] = useState(1);
+
   const csvResult = useMemo(() => {
     if (!csvPreview || !columnMapping) return null;
     return applyColumnMapping(csvPreview, columnMapping);
@@ -318,6 +361,13 @@ const Expenses = () => {
   );
   const personName = (expense: Expense) =>
     attributionLabel(expense.assignedMemberId, people, activeProfile?.memberId);
+  const matchesPerson = (expense: Expense, term: string) =>
+    matchesPersonSearch(
+      expense.assignedMemberId,
+      term,
+      people,
+      activeProfile?.memberId,
+    );
   const existingCategories = useMemo(
     () => uniqueCategoryNames(expensesCopy.map((expense) => expense.category)),
     [expensesCopy],
@@ -455,7 +505,7 @@ const Expenses = () => {
       range,
       filterBy,
       query,
-      personName,
+      matchesPerson,
     );
     const list = orderExpenses(
       editing ? withDrafts(filtered) : filtered,
@@ -1307,6 +1357,46 @@ const Expenses = () => {
     });
   }
 
+  function openExport() {
+    setExportRows(orderedExpenses);
+    setExportSelected(orderedExpenses.map(() => true));
+    setExportColumns(defaultExportColumns());
+    setExportPage(1);
+    setShowExport(true);
+  }
+
+  function closeExport() {
+    setShowExport(false);
+    setExportRows([]);
+    setExportSelected([]);
+    setExportPage(1);
+  }
+
+  function toggleExportSelected(index: number, checked: boolean) {
+    setExportSelected((current) =>
+      current.map((value, i) => (i === index ? checked : value)),
+    );
+  }
+
+  function toggleExportSelectedAll(checked: boolean) {
+    setExportSelected((current) => current.map(() => checked));
+  }
+
+  function toggleExportColumn(field: ExpenseCsvField, checked: boolean) {
+    setExportColumns((current) => ({ ...current, [field]: checked }));
+  }
+
+  function confirmExport() {
+    const fields = selectedExportFields(exportColumns);
+    const rows = exportRows.filter((_, index) => exportSelected[index]);
+    if (fields.length === 0 || rows.length === 0) return;
+    downloadCsv(
+      expenseExportFilename(),
+      expensesToCsv(rows, personName, fields),
+    );
+    closeExport();
+  }
+
   function toggleGroup(key: string) {
     const next = new Map(expanded);
     const isOpen = expanded.get(key) !== false;
@@ -1453,6 +1543,7 @@ const Expenses = () => {
             ? attributionLabel(null, people, activeProfile?.memberId)
             : attributionLabel(group.key, people, activeProfile?.memberId)
           : group.key || "(Blank)";
+      const groupAmountLabel = formatMoney(group.amount);
       return (
         <React.Fragment key={`group-${group.key}-${index}`}>
           <TableRow
@@ -1481,6 +1572,9 @@ const Expenses = () => {
               <span className="font-normal text-muted-foreground">
                 ({countLabel})
               </span>{" "}
+              <span className="font-normal text-muted-foreground tabular-nums">
+                ({groupAmountLabel})
+              </span>{" "}
               {isOpen ? (
                 <ChevronUp className="inline h-4 w-4" />
               ) : (
@@ -1506,6 +1600,15 @@ const Expenses = () => {
   const importSelectedCount = importSelected.filter(Boolean).length;
   const importAllSelected =
     importSelected.length > 0 && importSelectedCount === importSelected.length;
+  const exportPageStart = (exportPage - 1) * IMPORT_CATEGORY_PAGE_SIZE;
+  const exportPageRowCount = Math.min(
+    IMPORT_CATEGORY_PAGE_SIZE,
+    Math.max(0, exportRows.length - exportPageStart),
+  );
+  const exportSelectedCount = exportSelected.filter(Boolean).length;
+  const exportAllSelected =
+    exportSelected.length > 0 && exportSelectedCount === exportSelected.length;
+  const exportFieldKeys = selectedExportFields(exportColumns);
   const importDialogWide = Boolean(csvPreview) && importStep === "map";
   const importDialogPreview = importStep === "preview";
   const importDialogCategories = importStep === "categories";
@@ -1517,6 +1620,10 @@ const Expenses = () => {
         : csvPreview
           ? "Import CSV"
           : "Import";
+  const totalSpent = useMemo(
+    () => sumExpenseAmounts(orderedExpenses),
+    [orderedExpenses],
+  );
   const showImportUpload =
     importStep === "map" && !csvPreview && !importParsing;
 
@@ -1524,9 +1631,22 @@ const Expenses = () => {
     <div className="min-h-screen bg-background pb-20">
       <Header />
       <main className="space-y-6 px-8 py-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="space-y-4">
           <h1 className="text-4xl font-semibold tracking-tight">Expenses</h1>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-2">
+              {!expensesLoading && (
+                <>
+                  <span className="inline-flex items-center rounded-md border bg-muted/40 px-3 py-1.5 text-sm font-semibold tabular-nums">
+                    Total: {formatMoney(totalSpent)}
+                  </span>
+                  <span className="inline-flex items-center rounded-md border bg-muted/40 px-3 py-1.5 text-sm font-semibold tabular-nums">
+                    Transactions: {filteredTotal}
+                  </span>
+                </>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
             {canWrite ? (
               <>
                 <input
@@ -1542,6 +1662,18 @@ const Expenses = () => {
                 <Button variant="outline" onClick={() => setShowImport(true)}>
                   Import
                 </Button>
+              </>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={openExport}
+              disabled={orderedExpenses.length === 0}
+            >
+              Export
+            </Button>
+            {canWrite ? (
+              <>
                 {editMode || editId != null ? (
                   <>
                     <Button
@@ -1586,61 +1718,76 @@ const Expenses = () => {
             ) : (
               <p className="text-sm text-muted-foreground">View only</p>
             )}
+            </div>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-muted-foreground">Group By:</span>
-            <Select
-              value={groupMode}
-              onValueChange={(value) => handleGroupBy(value as ExpensePart)}
-            >
-              <SelectTrigger className="min-w-[8.5rem]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent position="popper">
-                <SelectItem value="none">None</SelectItem>
-                <SelectItem value="date">Date</SelectItem>
-                <SelectItem value="account">Account</SelectItem>
-                <SelectItem value="vendor">Vendor</SelectItem>
-                <SelectItem value="amount">Amount</SelectItem>
-                <SelectItem value="category">Category</SelectItem>
-                <SelectItem value="person">Person</SelectItem>
-              </SelectContent>
-            </Select>
-            <span className="text-sm text-muted-foreground">Date:</span>
-            <PeriodRangePicker
-              grain={dateGrain}
-              value={dateRange}
-              align="start"
-              onChange={handleDateRangeChange}
-              onGrainChange={handleDateGrainChange}
-              onClear={() => handleDateRangeChange(null)}
-            />
-            {groupMode !== "none" && (
-              <>
-                <Button variant="outline" onClick={() => setAllExpanded(true)}>
-                  Expand All
-                </Button>
-                <Button variant="outline" onClick={() => setAllExpanded(false)}>
-                  Collapse All
-                </Button>
-              </>
-            )}
+              <span className="text-sm text-muted-foreground">Group By:</span>
+              <Select
+                value={groupMode}
+                onValueChange={(value) => handleGroupBy(value as ExpensePart)}
+              >
+                <SelectTrigger className="min-w-[8.5rem]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent position="popper">
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="date">Date</SelectItem>
+                  <SelectItem value="account">Account</SelectItem>
+                  <SelectItem value="vendor">Vendor</SelectItem>
+                  <SelectItem value="amount">Amount</SelectItem>
+                  <SelectItem value="category">Category</SelectItem>
+                  <SelectItem value="person">Person</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-sm text-muted-foreground">Date:</span>
+              <PeriodRangePicker
+                grain={dateGrain}
+                value={dateRange}
+                align="start"
+                onChange={handleDateRangeChange}
+                onGrainChange={handleDateGrainChange}
+                onClear={() => handleDateRangeChange(null)}
+              />
+              {groupMode !== "none" && (
+                <>
+                  <Button variant="outline" onClick={() => setAllExpanded(true)}>
+                    Expand All
+                  </Button>
+                  <Button variant="outline" onClick={() => setAllExpanded(false)}>
+                    Collapse All
+                  </Button>
+                </>
+              )}
           </div>
           <div className="flex min-w-[280px] items-center gap-2">
             <div className="relative flex-1">
               <Search className="absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                className="pl-8"
+                className={cn("pl-8", searchByQuery && "pr-8")}
                 placeholder="Search"
                 aria-label="Search"
+                value={searchByQuery}
                 onChange={(e) => {
                   setSearchByQuery(e.target.value);
                   filterBySearch(searchBySelect, e.target.value);
                 }}
               />
+              {searchByQuery ? (
+                <button
+                  type="button"
+                  className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  aria-label="Clear search"
+                  onClick={() => {
+                    setSearchByQuery("");
+                    filterBySearch(searchBySelect, "");
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              ) : null}
             </div>
             <Select
               value={searchBySelect}
@@ -2490,6 +2637,150 @@ const Expenses = () => {
                 )}
               </>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showExport}
+        onOpenChange={(open) => {
+          if (!open) closeExport();
+        }}
+      >
+        <DialogContent className="flex max-h-[90vh] w-[min(96vw,56rem)] flex-col overflow-hidden sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Export transactions</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
+            <p className="text-sm text-muted-foreground">
+              Uncheck columns or rows you do not want to export.
+            </p>
+            <div>
+              <div className="overflow-x-auto rounded-md border">
+                <Table className="table-fixed">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10 text-center align-middle leading-none">
+                        <Checkbox
+                          checked={
+                            exportSelectedCount === 0
+                              ? false
+                              : exportAllSelected
+                                ? true
+                                : "indeterminate"
+                          }
+                          onCheckedChange={(checked) =>
+                            toggleExportSelectedAll(checked === true)
+                          }
+                          aria-label="Select all transactions"
+                        />
+                      </TableHead>
+                      {EXPENSE_CSV_FIELDS.map((field) => {
+                        const included = exportColumns[field.key];
+                        return (
+                          <TableHead
+                            key={field.key}
+                            className={cn(
+                              "pr-2",
+                              field.key === "date" && "w-32",
+                              field.key === "amount" && "w-28",
+                              !included && "text-muted-foreground",
+                            )}
+                          >
+                            <span className="inline-flex items-center gap-1.5">
+                              {field.label}
+                              <Checkbox
+                                checked={included}
+                                onCheckedChange={(checked) =>
+                                  toggleExportColumn(
+                                    field.key,
+                                    checked === true,
+                                  )
+                                }
+                                aria-label={`Include ${field.label} column`}
+                              />
+                            </span>
+                          </TableHead>
+                        );
+                      })}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {exportRows
+                      .slice(
+                        exportPageStart,
+                        exportPageStart + IMPORT_CATEGORY_PAGE_SIZE,
+                      )
+                      .map((expense, index) => {
+                        const rowIndex = exportPageStart + index;
+                        const included = exportSelected[rowIndex] !== false;
+                        return (
+                          <TableRow
+                            key={`export-${expense._id}-${rowIndex}`}
+                            className={included ? "" : "opacity-50"}
+                          >
+                            <TableCell className="w-10 text-center align-middle leading-none">
+                              <Checkbox
+                                checked={included}
+                                onCheckedChange={(checked) =>
+                                  toggleExportSelected(
+                                    rowIndex,
+                                    checked === true,
+                                  )
+                                }
+                                aria-label={`Include ${expense.vendor}`}
+                              />
+                            </TableCell>
+                            {EXPENSE_CSV_FIELDS.map((field) => {
+                              const value = exportPreviewValue(
+                                expense,
+                                field.key,
+                                personName,
+                              );
+                              return (
+                                <TableCell
+                                  key={field.key}
+                                  className={cn(
+                                    "truncate",
+                                    !exportColumns[field.key] && "opacity-50",
+                                  )}
+                                  title={value}
+                                >
+                                  {value}
+                                </TableCell>
+                              );
+                            })}
+                          </TableRow>
+                        );
+                      })}
+                  </TableBody>
+                </Table>
+              </div>
+              <ImportPageSpacer
+                rowsOnPage={exportPageRowCount}
+                rowHeight="2.5rem"
+              />
+            </div>
+            <ImportCategoryPager
+              page={exportPage}
+              perPage={IMPORT_CATEGORY_PAGE_SIZE}
+              total={exportRows.length}
+              onPage={setExportPage}
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeExport}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                exportSelectedCount === 0 || exportFieldKeys.length === 0
+              }
+              onClick={confirmExport}
+            >
+              {`Export${exportSelectedCount ? ` (${exportSelectedCount})` : ""}`}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

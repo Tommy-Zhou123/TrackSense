@@ -6,6 +6,7 @@ import {
   chartExpensesByPerson,
   expensesByPerson,
   isSplitAssignment,
+  matchesPersonSearch,
   personLabel,
   personPieSlices,
   splitAmount,
@@ -54,6 +55,19 @@ describe("expenseAttribution", () => {
       expect.objectContaining({ category: "blair", amount: 45 }),
       expect.objectContaining({ category: "alex", amount: 40 }),
     ]);
+  });
+
+  it("includes split transactions when searching for a person who shares them", () => {
+    const alexHalf = member("a", "alex@example.com", 50);
+    const blairHalf = member("b", "blair@example.com", 50);
+    const casey = member("c", "casey@example.com", 0);
+    expect(matchesPersonSearch(null, "alex", [alex, blair])).toBe(true);
+    expect(matchesPersonSearch("split", "blair", [alex, blair], "b")).toBe(true);
+    expect(matchesPersonSearch(null, "split", [alex, blair])).toBe(true);
+    expect(matchesPersonSearch("a", "blair", [alex, blair])).toBe(false);
+    expect(matchesPersonSearch("a", "alex", [alex, blair])).toBe(true);
+    expect(matchesPersonSearch(null, "alex", [alexHalf, blairHalf, casey])).toBe(true);
+    expect(matchesPersonSearch(null, "casey", [alexHalf, blairHalf, casey])).toBe(false);
   });
 
   it("treats the split sentinel as unassigned", () => {
